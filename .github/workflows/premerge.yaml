@@ -24,32 +24,23 @@ concurrency:
 
 jobs:
   premerge-checks-linux:
-    name: Build and Test Linux${{ (startsWith(matrix.runs-on, 'depot-ubuntu-24.04-arm') && ' AArch64') || '' }}
-    if: >-
-        github.repository_owner == 'llvm' &&
-        (github.event_name != 'pull_request' || github.event.action != 'closed')
+    name: Build and Test Linux${{ (startsWith(matrix.runs-on, 'ubuntu-24.04-arm') && ' AArch64') || '' }}
+    if: github.event_name != 'pull_request' || github.event.action != 'closed'
     strategy:
       fail-fast: false
       matrix:
         runs-on:
-          - depot-ubuntu-24.04-arm-16
-          - llvm-premerge-linux-runners
+          - ubuntu-24.04-arm
+          - ubuntu-24.04
     runs-on: ${{ matrix.runs-on }}
     container:
-      # The llvm-premerge agents are already containers and running the
-      # this same image, so we can't use a container for the github action
-      # job.  The depot containers are running on VMs, so we can use a
-      # container.  This helps ensure the build environment is as close
-      # as possible on both the depot runners and the llvm-premerge runners.
-      image: ${{ (startsWith(matrix.runs-on, 'depot-ubuntu-24.04-arm') && format('ghcr.io/{0}/arm64v8/ci-ubuntu-24.04',github.repository_owner) ) || null }}
+      # Use the public LLVM CI container on GitHub-hosted runners. The
+      # containers are also what the upstream premerge runners execute, so the
+      # build environment matches the upstream one as closely as possible.
+      image: ${{ (startsWith(matrix.runs-on, 'ubuntu-24.04-arm') && 'ghcr.io/llvm/arm64v8/ci-ubuntu-24.04') || 'ghcr.io/llvm/ci-ubuntu-24.04' }}
       # --privileged is needed to run the lldb tests that disable aslr.
-      # The SCCACHE environment variables are need to be copied from the host
-      # to the container to make sure it is configured correctly to use the
-      # depot cache.
       options: >-
          --privileged
-         --env SCCACHE_WEBDAV_ENDPOINT
-         --env SCCACHE_WEBDAV_TOKEN
     defaults:
       run:
         # The run step defaults to using sh as the shell when running in a
@@ -62,6 +53,7 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 2
+          submodules: recursive
       - name: Build and Test
         timeout-minutes: 120
         env:
@@ -86,15 +78,6 @@ jobs:
           export CC=/opt/llvm/bin/clang
           export CXX=/opt/llvm/bin/clang++
 
-          # The linux-premerge runners are hosted on GCP and have a different
-          # cache setup than the depot runners.
-          if [[ "${{ matrix.runs-on }}" = "llvm-premerge-linux-runners" ]]; then
-            # This environment variable is passes into the container through the
-            # runner pod definition. This differs between our two clusters which
-            # why we do not hardcode it.
-            export SCCACHE_GCS_BUCKET=$CACHE_GCS_BUCKET
-            export SCCACHE_GCS_RW_MODE=READ_WRITE
-          fi
           env
 
           # Set the idle timeout to zero to ensure sccache runs for the
@@ -121,7 +104,7 @@ jobs:
           include-hidden-files: 'true'
       - name: Upload Comment
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        if: ${{ always() && !startsWith(matrix.runs-on, 'depot-ubuntu-24.04-arm') }}
+        if: ${{ always() && !startsWith(matrix.runs-on, 'ubuntu-24.04-arm') }}
         continue-on-error: true
         with:
           name: workflow-args-x86-linux
@@ -130,10 +113,8 @@ jobs:
 
   premerge-checks-windows:
     name: Build and Test Windows
-    if: >-
-        github.repository_owner == 'llvm' &&
-        (github.event_name != 'pull_request' || github.event.action != 'closed')
-    runs-on: llvm-premerge-windows-2022-runners
+    if: github.event_name != 'pull_request' || github.event.action != 'closed'
+    runs-on: windows-2022
     defaults:
       run:
         shell: bash
@@ -143,6 +124,7 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 2
+          submodules: recursive
       - name: Compute Projects
         id: vars
         run: |
@@ -161,6 +143,12 @@ jobs:
           echo "windows-check-targets=${project_check_targets}" >> $GITHUB_OUTPUT
           echo "windows-runtimes=${runtimes_to_build}" >> $GITHUB_OUTPUT
           echo "windows-runtimes-check-targets=${runtimes_check_targets}" >> $GITHUB_OUTPUT
+      - name: Install sccache
+        if: ${{ steps.vars.outputs.windows-projects != '' }}
+        shell: bash
+        run: |
+          choco install -y sccache --no-progress
+          echo "C:\\Program Files\\LLVM\\bin" >> "$GITHUB_PATH"
       - name: Build and Test
         timeout-minutes: 180
         if: ${{ steps.vars.outputs.windows-projects != '' }}
@@ -173,10 +161,10 @@ jobs:
           WINDOWS_RUNTIMES: ${{ steps.vars.outputs.windows-runtimes }}
           WINDOWS_RUNTIMES_CHECK_TARGETS: ${{ steps.vars.outputs.windows-runtimes-check-targets }}
         run: |
-          call C:\\BuildTools\\Common7\\Tools\\VsDevCmd.bat -arch=amd64 -host_arch=amd64
+          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\Common7\Tools\VsDevCmd.bat" -arch=amd64 -host_arch=amd64
           # See the comments above in the Linux job for why we define each of
           # these environment variables.
-          bash -c "export SCCACHE_GCS_BUCKET=$CACHE_GCS_BUCKET; export SCCACHE_GCS_RW_MODE=READ_WRITE; export SCCACHE_IDLE_TIMEOUT=0; mkdir artifacts; SCCACHE_LOG=info SCCACHE_ERROR_LOG=$(pwd)/artifacts/sccache.log sccache --start-server; .ci/monolithic-windows.sh \"$WINDOWS_PROJECTS\" \"$WINDOWS_CHECK_TARGETS\" \"$WINDOWS_RUNTIMES\" \"$WINDOWS_RUNTIMES_CHECK_TARGETS\""
+          bash -c "export SCCACHE_IDLE_TIMEOUT=0; mkdir artifacts; SCCACHE_LOG=info SCCACHE_ERROR_LOG=$(pwd)/artifacts/sccache.log sccache --start-server; CC='C:/Program Files/LLVM/bin/clang-cl.exe' CXX='C:/Program Files/LLVM/bin/clang-cl.exe' .ci/monolithic-windows.sh \"$WINDOWS_PROJECTS\" \"$WINDOWS_CHECK_TARGETS\" \"$WINDOWS_RUNTIMES\" \"$WINDOWS_RUNTIMES_CHECK_TARGETS\""
       - name: Upload Artifacts
         # In some cases, Github will fail to upload the artifact. We want to
         # continue anyways as a failed artifact upload is an infra failure, not
@@ -208,9 +196,7 @@ jobs:
   # affect what runs there.
   premerge-compute-macos:
     name: Compute macOS Projects
-    if: >-
-        github.repository_owner == 'llvm' &&
-        (github.event_name != 'pull_request' || github.event.action != 'closed')
+    if: github.event_name != 'pull_request' || github.event.action != 'closed'
     runs-on: ubuntu-22.04
     permissions:
       contents: read
@@ -269,11 +255,10 @@ jobs:
   premerge-check-macos:
     name: Build and Test macOS arm64
     needs: premerge-compute-macos
-    runs-on: [self-hosted, macOS, ARM64, apple-runners]
-    # Skip the self-hosted runner entirely if there is nothing to build,
-    # rather than tying up a runner slot for a no-op run.
+    runs-on: macos-15
+    # Skip the job entirely if there is nothing to build, rather than tying up
+    # a runner slot for a no-op run.
     if: >-
-        github.repository_owner == 'llvm' &&
         (github.event_name != 'pull_request' || github.event.action != 'closed') &&
         needs.premerge-compute-macos.outputs.macos-projects != ''
     steps:
@@ -282,19 +267,18 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 2
+          submodules: recursive
       - name: Install Ninja, CMake, and sccache
         run: |
           brew install ninja cmake
           command -v sccache >/dev/null || brew install sccache
       - name: Set up Python venv
         run: |
-          "$(brew --prefix python@3.14)/bin/python3.14" -m venv "${RUNNER_TEMP}/venv"
+          python3 -m venv "${RUNNER_TEMP}/venv"
           echo "${RUNNER_TEMP}/venv/bin" >> "$GITHUB_PATH"
       - name: Build and Test
         timeout-minutes: 240
         env:
-          SCCACHE_BUCKET: sccache-bucket
-          SCCACHE_REGION: us-west-2
           PROJECTS: ${{ needs.premerge-compute-macos.outputs.macos-projects }}
           CHECK_TARGETS: ${{ needs.premerge-compute-macos.outputs.macos-check-targets }}
           RUNTIMES: ${{ needs.premerge-compute-macos.outputs.macos-runtimes }}

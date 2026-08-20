@@ -36,8 +36,7 @@ concurrency:
 
 jobs:
   stage1:
-    if: github.repository_owner == 'llvm'
-    runs-on: llvm-premerge-libcxx-runners
+    runs-on: ubuntu-24.04
     continue-on-error: false
     strategy:
       fail-fast: false
@@ -52,12 +51,14 @@ jobs:
         cxx: [ 'clang++-23' ]
         include:
           - config: 'generic-gcc'
-            cc: 'gcc-16'
-            cxx: 'g++-16'
+            cc: 'gcc-13'
+            cxx: 'g++-13'
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
+      - name: Install toolchain
+        run: .ci/install-pr-toolchain.sh
       - name: ${{ matrix.config }}.${{ matrix.cxx }}
         run: |
           python3 -m venv --system-site-packages .venv
@@ -79,8 +80,7 @@ jobs:
             **/CMakeOutput.log
             **/crash_diagnostics/*
   stage2:
-    if: github.repository_owner == 'llvm'
-    runs-on: llvm-premerge-libcxx-runners
+    runs-on: ubuntu-24.04
     needs: [ stage1 ]
     continue-on-error: false
     strategy:
@@ -97,8 +97,8 @@ jobs:
         cxx: [ 'clang++-23' ]
         include:
           - config: 'generic-gcc-cxx11'
-            cc: 'gcc-16'
-            cxx: 'g++-16'
+            cc: 'gcc-13'
+            cxx: 'g++-13'
           - config: 'generic-cxx26'
             cc: 'clang-22'
             cxx: 'clang++-22'
@@ -109,6 +109,8 @@ jobs:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
+      - name: Install toolchain
+        run: .ci/install-pr-toolchain.sh
       - name: ${{ matrix.config }}
         run: |
           python3 -m venv --system-site-packages .venv
@@ -130,8 +132,7 @@ jobs:
             **/CMakeOutput.log
             **/crash_diagnostics/*
   stage3:
-    if: github.repository_owner == 'llvm'
-    runs-on: llvm-premerge-libcxx-runners
+    runs-on: ubuntu-24.04
     needs: [ stage2 ]
     continue-on-error: false
     strategy:
@@ -171,6 +172,8 @@ jobs:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
+      - name: Install toolchain
+        run: .ci/install-pr-toolchain.sh
       - name: ${{ matrix.config }}
         run: |
           python3 -m venv --system-site-packages .venv
@@ -220,13 +223,11 @@ jobs:
           xcode-version: '26.5'
         - config: apple-system-hardened
           xcode-version: '26.5'
-    runs-on: ["self-hosted", "macOS", "apple-runners"]
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
-      - name: Select Xcode
-        run: echo "DEVELOPER_DIR=/Applications/Xcode_${{ matrix.xcode-version }}.app/Contents/Developer" >> $GITHUB_ENV
       - name: Install Ninja and CMake
         run: |
           brew update

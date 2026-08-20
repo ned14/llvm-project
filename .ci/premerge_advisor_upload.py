@@ -62,4 +62,9 @@ if __name__ == "__main__":
     if platform.machine() == "arm64" or platform.machine() == "aarch64":
         sys.exit(0)
 
+    if os.environ.get("GITHUB_REPOSITORY") != "llvm/llvm-project":
+        # The premerge advisor service only serves the llvm/llvm-project
+        # repository; forks have no advisor instance to upload to.
+        sys.exit(0)
+
     main(args.commit_sha, args.workflow_run_number, args.build_log_files)

@@ -11,7 +11,6 @@ on:
 
 jobs:
   code_linter:
-    if: github.repository_owner == 'llvm'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     concurrency:

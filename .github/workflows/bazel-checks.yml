@@ -19,7 +19,6 @@ jobs:
   buildifier:
     name: "Buildifier"
     runs-on: ubuntu-24.04
-    if: github.repository == 'llvm/llvm-project'
     steps:
       - name: Fetch LLVM sources
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
@@ -45,12 +44,7 @@ jobs:
 
   bazel-build:
     name: "Bazel Build/Test"
-    # Only run on US Central workers so we only have to keep one cache warm as
-    # the cache buckets are per cluster.
-    runs-on:
-      group: llvm-premerge-cluster-us-central
-      labels: llvm-premerge-linux-runners
-    if: github.repository == 'llvm/llvm-project'
+    runs-on: ubuntu-24.04
     steps:
       - name: Fetch LLVM sources
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
@@ -71,6 +65,4 @@ jobs:
         working-directory: utils/bazel
         run: |
           bazelisk test --config=ci --sandbox_base="" \
-            --remote_cache=https://storage.googleapis.com/$CACHE_GCS_BUCKET-bazel \
-            --google_default_credentials \
             @llvm-project//... //...

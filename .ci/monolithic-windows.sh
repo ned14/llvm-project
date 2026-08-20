@@ -30,8 +30,11 @@ fi
 start-group "CMake"
 pip install -q -r "${MONOREPO_ROOT}"/.ci/all_requirements.txt
 
-export CC=C:/clang/clang-msvc/bin/clang-cl.exe
-export CXX=C:/clang/clang-msvc/bin/clang-cl.exe
+# Allow the invoking workflow to override the compiler. GitHub-hosted runners
+# do not have a preinstalled clang at C:/clang, so workflows pass the clang-cl
+# that ships with the runner image (or one installed via choco).
+export CC="${CC:-C:/clang/clang-msvc/bin/clang-cl.exe}"
+export CXX="${CXX:-C:/clang/clang-msvc/bin/clang-cl.exe}"
 export LD=link
 
 # The CMAKE_*_LINKER_FLAGS to disable the manifest come from research

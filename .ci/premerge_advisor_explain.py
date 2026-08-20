@@ -4,6 +4,7 @@
 """Script for getting explanations from the premerge advisor."""
 
 import argparse
+import os
 import platform
 import sys
 import json
@@ -143,6 +144,12 @@ if __name__ == "__main__":
     # Skip looking for results on AArch64 for now because the premerge advisor
     # service is not available on AWS currently.
     if platform.machine() == "arm64" or platform.machine() == "aarch64":
+        sys.exit(args.return_code)
+
+    if os.environ.get("GITHUB_REPOSITORY") != "llvm/llvm-project":
+        # The premerge advisor service only serves the llvm/llvm-project
+        # repository. On forks the service is unreachable and any comments
+        # would target the wrong repository, so run no advisor logic there.
         sys.exit(args.return_code)
 
     failures_explained = main(

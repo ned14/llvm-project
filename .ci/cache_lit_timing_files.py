@@ -83,8 +83,14 @@ if __name__ == "__main__":
         logging.fatal("Expected usage is cache_lit_timing_files.py <upload/download>")
         sys.exit(1)
     action = sys.argv[1]
+    bucket_name = os.environ.get("CACHE_GCS_BUCKET")
+    if not bucket_name:
+        # Forks and other non-LLVM repositories do not have the GCS cache
+        # bucket (or its credentials). Lit timing files are only a ~15% test
+        # scheduling optimization, so gracefully skip them there.
+        print("CACHE_GCS_BUCKET is not set; skipping lit timing cache")
+        sys.exit(0)
     storage_client = storage.Client()
-    bucket_name = os.environ["CACHE_GCS_BUCKET"]
     if action == "download":
         download_timing_files(storage_client, bucket_name)
     elif action == "upload":

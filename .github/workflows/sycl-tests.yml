@@ -17,7 +17,6 @@ concurrency:
 
 jobs:
   check_sycl:
-    if: github.repository_owner == 'llvm'
     name: Test SYCL
     runs-on: ubuntu-24.04
     container:
