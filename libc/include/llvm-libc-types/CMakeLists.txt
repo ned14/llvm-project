@@ -177,16 +177,17 @@ add_header(sigset_t HDR sigset_t.h DEPENDS libc.include.llvm-libc-macros.signal_
 set(mcontext_deps)
 set(ucontext_deps .sigset_t .stack_t)
 
-if(LIBC_TARGET_ARCHITECTURE STREQUAL "x86_64")
+if(LIBC_TARGET_ARCHITECTURE STREQUAL "x86_64" OR
+   LIBC_TARGET_ARCHITECTURE STREQUAL "aarch64")
   add_header(
     mcontext_t_arch
     HDR
-      x86_64/mcontext_t.h
+      ${LIBC_TARGET_ARCHITECTURE}/mcontext_t.h
   )
   add_header(
     ucontext_t_arch
     HDR
-      x86_64/ucontext_t.h
+      ${LIBC_TARGET_ARCHITECTURE}/ucontext_t.h
     DEPENDS
       .mcontext_t_arch
       .sigset_t
@@ -733,3 +734,13 @@ add_header(__action_fn_t
     .VISIT
 )
 add_header(__free_fn_t HDR __free_fn_t.h)
+add_header(global_signal_decider_t HDR global_signal_decider_t.h)
+add_header(thread_id_t HDR thread_id_t.h)
+add_header(tss_async_signal_safe_t HDR tss_async_signal_safe_t.h)
+add_header(struct_tss_async_signal_safe_attr HDR struct_tss_async_signal_safe_attr.h)
+add_header(sig_decision HDR sig_decision.h)
+add_header(union_stdc_siginfo_value HDR union_stdc_siginfo_value.h)
+add_header(struct_stdc_siginfo HDR struct_stdc_siginfo.h DEPENDS .union_stdc_siginfo_value)
+add_header(sig_func_t HDR sig_func_t.h DEPENDS .union_stdc_siginfo_value)
+add_header(sig_recover_t HDR sig_recover_t.h DEPENDS .struct_stdc_siginfo)
+add_header(sig_decide_t HDR sig_decide_t.h DEPENDS .sig_decision .struct_stdc_siginfo)

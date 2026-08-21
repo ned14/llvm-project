@@ -155,6 +155,18 @@ add_entrypoint_object(
 )
 
 add_entrypoint_object(
+  sigismember
+  SRCS
+    sigismember.cpp
+  HDRS
+    ../sigismember.h
+  DEPENDS
+    .signal_utils
+    libc.hdr.types.sigset_t
+    libc.src.errno.errno
+)
+
+add_entrypoint_object(
   sigdelset
   SRCS
     sigdelset.cpp

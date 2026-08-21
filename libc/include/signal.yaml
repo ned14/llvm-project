@@ -1,6 +1,8 @@
 header: signal.h
 standards:
   - stdc
+extra_standards:
+  n3924: WG14 N3924
 macros:
   - macro_name: SIGABRT
     macro_header: signal-macros.h
@@ -20,6 +22,8 @@ macros:
     macro_header: signal-macros.h
   - macro_name: SIG_IGN
     macro_header: signal-macros.h
+  - macro_name: sigfence
+    macro_header: sigfence-macros.h
 types:
   - type_name: pid_t
   - type_name: sig_atomic_t
@@ -34,6 +38,27 @@ types:
   - type_name: stack_t
   - type_name: struct_sigaction
   - type_name: union_sigval
+  - type_name: global_signal_decider_t
+    standards:
+      - n3924
+  - type_name: sig_decide_t
+    standards:
+      - n3924
+  - type_name: sig_decision
+    standards:
+      - n3924
+  - type_name: sig_func_t
+    standards:
+      - n3924
+  - type_name: sig_recover_t
+    standards:
+      - n3924
+  - type_name: struct_stdc_siginfo
+    standards:
+      - n3924
+  - type_name: union_stdc_siginfo_value
+    standards:
+      - n3924
 enums: []
 objects: []
 functions:
@@ -85,6 +110,13 @@ functions:
     return_type: int
     arguments:
       - type: sigset_t *
+  - name: sigismember
+    standards:
+      - posix
+    return_type: int
+    arguments:
+      - type: const sigset_t *
+      - type: int
   - name: sigfillset
     standards:
       - posix
@@ -119,3 +151,86 @@ functions:
       - type: int
       - type: const sigset_t *__restrict
       - type: sigset_t *__restrict
+  # WG14 N3924 improved C signals (implemented by the wg14_signals
+  # reference implementation submodule, libc/src/signal/wg14).
+  - name: sigfillset_synchronous
+    standards:
+      - n3924
+    return_type: int
+    arguments:
+      - type: sigset_t *
+  - name: sigfillset_asynchronous_nondebug
+    standards:
+      - n3924
+    return_type: int
+    arguments:
+      - type: sigset_t *
+  - name: sigfillset_asynchronous_debug
+    standards:
+      - n3924
+    return_type: int
+    arguments:
+      - type: sigset_t *
+  - name: sigguarded
+    standards:
+      - n3924
+    return_type: union stdc_siginfo_value
+    arguments:
+      - type: const sigset_t *
+      - type: sig_func_t
+      - type: sig_recover_t
+      - type: sig_decide_t
+      - type: union stdc_siginfo_value
+  - name: sigdecider_abandon
+    standards:
+      - n3924
+    return_type: void
+    arguments:
+      - type: struct stdc_siginfo *
+  - name: sigdecider_abandon_resume
+    standards:
+      - n3924
+    return_type: void
+    arguments:
+      - type: struct stdc_siginfo *
+  - name: stdc_raise
+    standards:
+      - n3924
+    return_type: bool
+    arguments:
+      - type: int
+      - type: void *
+      - type: void *
+  - name: siginstall
+    standards:
+      - n3924
+    return_type: void *
+    arguments:
+      - type: const sigset_t *
+  - name: siguninstall
+    standards:
+      - n3924
+    return_type: int
+    arguments:
+      - type: void *
+  - name: siguninstall_system
+    standards:
+      - n3924
+    return_type: int
+    arguments:
+      - type: int
+  - name: signal_decider_create
+    standards:
+      - n3924
+    return_type: void *
+    arguments:
+      - type: const sigset_t *
+      - type: bool
+      - type: sig_decide_t
+      - type: union stdc_siginfo_value
+  - name: signal_decider_destroy
+    standards:
+      - n3924
+    return_type: int
+    arguments:
+      - type: void *

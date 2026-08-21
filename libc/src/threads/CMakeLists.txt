@@ -224,3 +224,22 @@ add_entrypoint_object(
   DEPENDS
     .${LIBC_TARGET_OS}.cnd_broadcast
 )
+
+# WG14 N3924 improved C signals, <threads.h> domain: tss_async_signal_safe_*
+# (7.30.6.5-8) and current_thread_id, implemented by the wg14_signals
+# submodule (libc/src/signal/wg14-build/entrypoints). The signal.h-domain
+# entrypoints are registered in libc/src/signal/CMakeLists.txt.
+set(wg14_threads_entries
+  tss_async_signal_safe_create
+  tss_async_signal_safe_destroy
+  tss_async_signal_safe_thread_init
+  tss_async_signal_safe_get
+  current_thread_id)
+foreach(wg14_threads_entry ${wg14_threads_entries})
+  add_entrypoint_object(
+    ${wg14_threads_entry}
+    ALIAS
+    DEPENDS
+      libc.src.signal.wg14-build.entrypoints.${wg14_threads_entry}
+  )
+endforeach()

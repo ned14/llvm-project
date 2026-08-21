@@ -393,6 +393,9 @@ add_header_macro(
     .llvm-libc-types.thrd_start_t
     .llvm-libc-types.tss_t
     .llvm-libc-types.tss_dtor_t
+    .llvm-libc-types.tss_async_signal_safe_t
+    .llvm-libc-types.struct_tss_async_signal_safe_attr
+    .llvm-libc-types.thread_id_t
     .llvm-libc-types.struct_timespec
 )
 
@@ -412,13 +415,21 @@ add_header_macro(
   signal.h
   DEPENDS
     .llvm-libc-macros.signal_macros
+    .llvm-libc-macros.sigfence_macros
+    .llvm-libc-types.global_signal_decider_t
     .llvm-libc-types.pid_t
     .llvm-libc-types.sig_atomic_t
+    .llvm-libc-types.sig_decide_t
+    .llvm-libc-types.sig_decision
+    .llvm-libc-types.sig_func_t
+    .llvm-libc-types.sig_recover_t
     .llvm-libc-types.sig_t
     .llvm-libc-types.sighandler_t
     .llvm-libc-types.siginfo_t
     .llvm-libc-types.sigset_t
     .llvm-libc-types.stack_t
+    .llvm-libc-types.struct_stdc_siginfo
+    .llvm-libc-types.union_stdc_siginfo_value
     .llvm-libc-types.struct_sigaction
     .llvm-libc-types.union_sigval
 )
@@ -559,7 +570,8 @@ add_header_macro(
     .llvm_libc_common_h
 )
 
-if(LIBC_TARGET_ARCHITECTURE STREQUAL "x86_64")
+if(LIBC_TARGET_ARCHITECTURE STREQUAL "x86_64" OR
+   LIBC_TARGET_ARCHITECTURE STREQUAL "aarch64")
   add_header_macro(
     ucontext
     ../libc/include/ucontext.yaml
