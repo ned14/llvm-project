@@ -118,14 +118,41 @@ void *wg14_hostcall_pthread_getspecific(pthread_key_t key) {
 // calls; the strong libc entrypoints win in the library build. These weak
 // bridges are NOT used in the library build (the direct naked setjmp is
 // correct there); in test builds they only satisfy link-time resolution.
+//
+// MUST be tail calls: a plain wrapper would save the caller's frame
+// registers into the bridge's own stack frame, and that frame is routinely
+// overwritten by the calls the guarded function makes between setjmp() and
+// longjmp() -- longjmp would then return into the middle of a later call
+// instead of the setjmp site (hermetic-test-only defect, analysis Phase 3).
+// With [[clang::musttail]] the bridge has no frame of its own: the real
+// setjmp/longjmp save and restore the *caller's* context and return directly
+// to the caller's call site.
 __attribute__((weak)) int setjmp(jmp_buf buf) {
+#if defined(__clang__)
+  [[clang::musttail]] return LIBC_NAMESPACE::setjmp(buf);
+#else
   return LIBC_NAMESPACE::setjmp(buf);
+#endif
 }
 
+// The musttail return on a noreturn function trips -Winvalid-noreturn; the
+// call never actually returns (musttail + longjmp), so the diagnostic is a
+// false positive.
+#if defined(__clang__)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Winvalid-noreturn"
+#endif
 __attribute__((weak, noreturn)) void longjmp(jmp_buf buf, int val) {
+#if defined(__clang__)
+  [[clang::musttail]] return LIBC_NAMESPACE::longjmp(buf, val);
+#else
   LIBC_NAMESPACE::longjmp(buf, val);
   __builtin_unreachable();
+#endif
 }
+#if defined(__clang__)
+#pragma clang diagnostic pop
+#endif
 
 // Weak malloc/calloc/free so hermetic test links resolve the wg14 objects'
 // allocator calls (the libc test framework does not link the scudo runtime
