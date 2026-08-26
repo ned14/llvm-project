@@ -142,6 +142,37 @@ endif()
 
 add_subdirectory(BLAKE3)
 
+set(WG14_SIGNALS_OBJECTS "")
+if(LLVM_ENABLE_THREADSAFE_SIGNALS)
+  if(WIN32)
+    message(FATAL_ERROR "LLVM_ENABLE_THREADSAFE_SIGNALS is not supported on Windows (the wg14_signals SEH backend is not wired into LLVM yet)")
+  endif()
+  set(WG14_SIGNALS_SUBMODULE_DIR "${LLVM_SOURCE_DIR}/../libc/src/signal/wg14")
+  if(NOT EXISTS "${WG14_SIGNALS_SUBMODULE_DIR}/include/wg14_signals/config.h")
+    message(FATAL_ERROR "The wg14_signals git submodule is missing at libc/src/signal/wg14. Run `git submodule update --init libc/src/signal/wg14` in the llvm-project tree, then reconfigure.")
+  endif()
+  add_library(LLVMwg14_signals OBJECT
+    ${WG14_SIGNALS_SUBMODULE_DIR}/src/wg14_signals/current_thread_id.c
+    ${WG14_SIGNALS_SUBMODULE_DIR}/src/wg14_signals/thrd_signal_handle_posix.c
+    ${WG14_SIGNALS_SUBMODULE_DIR}/src/wg14_signals/thread_atexit.c
+    ${WG14_SIGNALS_SUBMODULE_DIR}/src/wg14_signals/tss_async_signal_safe.c
+    )
+  target_include_directories(LLVMwg14_signals SYSTEM PRIVATE
+    ${WG14_SIGNALS_SUBMODULE_DIR}/include
+    )
+  set_target_properties(LLVMwg14_signals PROPERTIES
+    C_STANDARD 11
+    C_STANDARD_REQUIRED ON
+    )
+  target_compile_definitions(LLVMwg14_signals PRIVATE WG14_SIGNALS_SOURCE)
+  target_compile_options(LLVMwg14_signals PRIVATE
+    "-include${LLVM_SOURCE_DIR}/lib/Support/Unix/LLVMSignalHooks.h"
+    -Wno-conversion
+    -Wno-cast-qual
+    )
+  set(WG14_SIGNALS_OBJECTS "$<TARGET_OBJECTS:LLVMwg14_signals>")
+endif()
+
 add_llvm_component_library(LLVMSupport
   ABIBreak.cpp
   AMDGPUMetadata.cpp
@@ -304,6 +335,7 @@ add_llvm_component_library(LLVMSupport
 
   ${ALLOCATOR_FILES}
   $<TARGET_OBJECTS:LLVMSupportBlake3>
+  ${WG14_SIGNALS_OBJECTS}
 
 # System
   Atomic.cpp
@@ -405,6 +437,7 @@ target_include_directories(LLVMSupport
   PRIVATE
   ${LLVM_THIRD_PARTY_DIR}/siphash/include
   ${LLVM_SOURCE_DIR}/../libc
+  ${WG14_SIGNALS_SUBMODULE_DIR}/include
 )
 
 if(NOT MSVC)

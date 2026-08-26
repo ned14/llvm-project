@@ -20,6 +20,7 @@
 #include "Unix.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Config/config.h"
+#include "llvm/Config/llvm-config.h"
 #include "llvm/Support/AutoConvert.h"
 #include "llvm/Support/Compiler.h"
 #include "llvm/Support/Errc.h"
@@ -87,7 +88,8 @@ ErrorOr<std::string> sys::findProgramByName(StringRef Name,
   return errc::no_such_file_or_directory;
 }
 
-static bool RedirectIO(std::optional<StringRef> Path, int FD, std::string *ErrMsg) {
+static bool RedirectIO(std::optional<StringRef> Path, int FD,
+                       std::string *ErrMsg) {
   if (!Path) // Noop
     return false;
   std::string File;
@@ -134,11 +136,17 @@ static bool RedirectIO_PS(const std::string *Path, int FD, std::string *ErrMsg,
 }
 #endif
 
+#if !LLVM_ENABLE_THREADSAFE_SIGNALS
 static void TimeOutHandler(int Sig) {}
+#endif
+
+#if LLVM_ENABLE_THREADSAFE_SIGNALS
+#include "wg14_signals/thrd_signal_handle.h"
+#endif
 
 static void SetMemoryLimits(unsigned size) {
   struct rlimit r;
-  __typeof__(r.rlim_cur) limit = (__typeof__(r.rlim_cur))(size)*1048576;
+  __typeof__(r.rlim_cur) limit = (__typeof__(r.rlim_cur))(size) * 1048576;
 
   // Heap size
   getrlimit(RLIMIT_DATA, &r);
@@ -382,12 +390,18 @@ ProcessInfo llvm::sys::Wait(const ProcessInfo &PI,
                             std::string *ErrMsg,
                             std::optional<ProcessStatistics> *ProcStat,
                             bool Polling) {
-  struct sigaction Act, Old;
   assert(PI.Pid && "invalid pid to wait on, process not started?");
 
   int WaitPidOptions = 0;
   pid_t ChildPid = PI.Pid;
   bool WaitUntilTerminates = false;
+#if LLVM_ENABLE_THREADSAFE_SIGNALS
+  void *AlarmInstallToken = nullptr;
+  void *AlarmDecider = nullptr;
+  sigset_t AlarmSet;
+#else
+  struct sigaction Act, Old;
+#endif
   if (!SecondsToWait) {
     WaitUntilTerminates = true;
   } else {
@@ -397,10 +411,35 @@ ProcessInfo llvm::sys::Wait(const ProcessInfo &PI,
     // Install a timeout handler.  The handler itself does nothing, but the
     // simple fact of having a handler at all causes the wait below to return
     // with EINTR, unlike if we used SIG_IGN.
+#if LLVM_ENABLE_THREADSAFE_SIGNALS
+    // Install the wg14 raw handler for SIGALRM with a no-op decider (a
+    // non-capturing lambda with a unary '+' to force the conversion to a
+    // plain C-compatible function pointer of the wg14 sig_decide_t type):
+    // the delivery runs the decider (resuming execution, exactly like the
+    // legacy no-op TimeOutHandler) and interrupts the wait.
+    sigemptyset(&AlarmSet);
+    sigaddset(&AlarmSet, SIGALRM);
+    AlarmInstallToken = siginstall(&AlarmSet);
+    if (AlarmInstallToken) {
+      stdc_siginfo_value Value;
+      AlarmDecider = signal_decider_create(
+          &AlarmSet, false,
+          +[](struct stdc_siginfo * Rsi)->enum sig_decision {
+            (void)Rsi;
+            return sig_decision_resume_execution;
+          },
+          Value);
+      if (!AlarmDecider) {
+        siguninstall(AlarmInstallToken);
+        AlarmInstallToken = nullptr;
+      }
+    }
+#else
     memset(&Act, 0, sizeof(Act));
     Act.sa_handler = TimeOutHandler;
     sigemptyset(&Act.sa_mask);
     sigaction(SIGALRM, &Act, &Old);
+#endif
     // FIXME The alarm signal may be delivered to another thread.
     alarm(*SecondsToWait);
   }
@@ -429,7 +468,14 @@ ProcessInfo llvm::sys::Wait(const ProcessInfo &PI,
 
         // Turn off the alarm and restore the signal handler
         alarm(0);
+#if LLVM_ENABLE_THREADSAFE_SIGNALS
+        if (AlarmDecider)
+          signal_decider_destroy(AlarmDecider);
+        if (AlarmInstallToken)
+          siguninstall(AlarmInstallToken);
+#else
         sigaction(SIGALRM, &Old, nullptr);
+#endif
 
         // Wait for child to die
         // FIXME This could grab some other child process out from another
@@ -452,7 +498,14 @@ ProcessInfo llvm::sys::Wait(const ProcessInfo &PI,
   // We exited normally without timeout, so turn off the timer.
   if (SecondsToWait && !WaitUntilTerminates) {
     alarm(0);
+#if LLVM_ENABLE_THREADSAFE_SIGNALS
+    if (AlarmDecider)
+      signal_decider_destroy(AlarmDecider);
+    if (AlarmInstallToken)
+      siguninstall(AlarmInstallToken);
+#else
     sigaction(SIGALRM, &Old, nullptr);
+#endif
   }
 
 #ifndef __Fuchsia__
