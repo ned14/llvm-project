@@ -1,0 +1,184 @@
+add_custom_target(libc_signal_wg14_unittests)
+
+# Hermetic ports of the wg14_signals reference-implementation test suite
+# (libc/src/signal/wg14/test) plus libc-native coexistence tests. They run
+# the N3924 entrypoints against libc's own full-build objects (the
+# wg14_signals submodule compiled with libc's embedder shim, hostcall bridge
+# and weak allocator fallback), catching override/embedding defects the
+# standalone suite cannot. The wg14 entrypoints are gated to Linux
+# (libc/src/signal/CMakeLists.txt), so on other platforms the DEPENDS below
+# have no targets and the tests are skipped by the hermetic test rules.
+add_libc_test(
+  wg14_raise_semantics_test
+  SUITE
+    libc_signal_wg14_unittests
+  SRCS
+    wg14_raise_semantics_test.cpp
+  DEPENDS
+    libc.include.signal
+    libc.hdr.errno_macros
+    libc.hdr.signal_macros
+    libc.hdr.types.siginfo_t
+    libc.hdr.types.sigset_t
+    libc.hdr.types.struct_stdc_siginfo
+    libc.hdr.types.union_stdc_siginfo_value
+    libc.src.signal.sigaddset
+    libc.src.signal.sigemptyset
+    libc.src.signal.sigguarded
+    libc.src.signal.siginstall
+    libc.src.signal.signal_decider_create
+    libc.src.signal.signal_decider_destroy
+    libc.src.signal.siguninstall
+    libc.src.signal.stdc_raise
+)
+
+add_libc_test(
+  wg14_install_semantics_test
+  SUITE
+    libc_signal_wg14_unittests
+  SRCS
+    wg14_install_semantics_test.cpp
+  DEPENDS
+    libc.include.signal
+    libc.hdr.errno_macros
+    libc.hdr.signal_macros
+    libc.hdr.types.sigset_t
+    libc.hdr.types.struct_stdc_siginfo
+    libc.hdr.types.union_stdc_siginfo_value
+    libc.src.signal.sigaction
+    libc.src.signal.sigaddset
+    libc.src.signal.sigemptyset
+    libc.src.signal.sigfillset
+    libc.src.signal.sigfillset_asynchronous_debug
+    libc.src.signal.sigfillset_asynchronous_nondebug
+    libc.src.signal.sigismember
+    libc.src.signal.siginstall
+    libc.src.signal.signal_decider_create
+    libc.src.signal.siguninstall
+    libc.src.signal.siguninstall_system
+    libc.src.signal.stdc_raise
+)
+
+add_libc_test(
+  wg14_sigguarded_test
+  SUITE
+    libc_signal_wg14_unittests
+  SRCS
+    wg14_sigguarded_test.cpp
+  DEPENDS
+    libc.include.signal
+    libc.hdr.errno_macros
+    libc.hdr.signal_macros
+    libc.hdr.types.sigset_t
+    libc.hdr.types.struct_stdc_siginfo
+    libc.hdr.types.union_stdc_siginfo_value
+    libc.src.signal.sigaddset
+    libc.src.signal.sigemptyset
+    libc.src.signal.sigguarded
+    libc.src.signal.siginstall
+    libc.src.signal.signal_decider_create
+    libc.src.signal.signal_decider_destroy
+    libc.src.signal.siguninstall
+    libc.src.signal.stdc_raise
+    libc.src.stdlib._Exit
+)
+
+add_libc_test(
+  wg14_handoff_test
+  SUITE
+    libc_signal_wg14_unittests
+  SRCS
+    wg14_handoff_test.cpp
+  DEPENDS
+    libc.include.signal
+    libc.hdr.errno_macros
+    libc.hdr.signal_macros
+    libc.hdr.types.siginfo_t
+    libc.hdr.types.sigset_t
+    libc.hdr.types.struct_stdc_siginfo
+    libc.hdr.types.union_stdc_siginfo_value
+    libc.src.signal.sigaction
+    libc.src.signal.sigaddset
+    libc.src.signal.sigemptyset
+    libc.src.signal.siginstall
+    libc.src.signal.signal_decider_create
+    libc.src.signal.signal_decider_destroy
+    libc.src.signal.siguninstall
+    libc.src.signal.stdc_raise
+    libc.src.stdio.stderr
+    libc.src.stdio.vfprintf
+)
+
+add_libc_test(
+  wg14_thread_handle_test
+  SUITE
+    libc_signal_wg14_unittests
+  SRCS
+    wg14_thread_handle_test.cpp
+  DEPENDS
+    libc.include.signal
+    libc.include.threads
+    libc.hdr.errno_macros
+    libc.hdr.signal_macros
+    libc.hdr.types.sigset_t
+    libc.hdr.types.struct_stdc_siginfo
+    libc.hdr.types.union_stdc_siginfo_value
+    libc.src.signal.kill
+    libc.src.signal.sigaddset
+    libc.src.signal.sigemptyset
+    libc.src.signal.sigguarded
+    libc.src.signal.siginstall
+    libc.src.signal.signal_decider_create
+    libc.src.signal.signal_decider_destroy
+    libc.src.signal.siguninstall
+    libc.src.signal.stdc_raise
+    libc.src.threads.thrd_create
+    libc.src.threads.thrd_join
+    libc.src.unistd.getpid
+)
+
+add_libc_test(
+  wg14_tss_test
+  SUITE
+    libc_signal_wg14_unittests
+  SRCS
+    wg14_tss_test.cpp
+  DEPENDS
+    libc.include.threads
+    libc.hdr.types.struct_tss_async_signal_safe_attr
+    libc.hdr.types.tss_async_signal_safe_t
+    libc.src.threads.thrd_create
+    libc.src.threads.thrd_join
+    libc.src.threads.tss_async_signal_safe_create
+    libc.src.threads.tss_async_signal_safe_destroy
+    libc.src.threads.tss_async_signal_safe_get
+    libc.src.threads.tss_async_signal_safe_thread_init
+)
+
+add_libc_test(
+  wg14_chain_test
+  SUITE
+    libc_signal_wg14_unittests
+  SRCS
+    wg14_chain_test.cpp
+  DEPENDS
+    libc.include.signal
+    libc.hdr.errno_macros
+    libc.hdr.signal_macros
+    libc.hdr.types.siginfo_t
+    libc.hdr.types.sigset_t
+    libc.hdr.types.struct_stdc_siginfo
+    libc.hdr.types.union_stdc_siginfo_value
+    libc.src.signal.raise
+    libc.src.signal.sigaction
+    libc.src.signal.sigaddset
+    libc.src.signal.sigaltstack
+    libc.src.signal.sigemptyset
+    libc.src.signal.sigguarded
+    libc.src.signal.siginstall
+    libc.src.signal.signal_decider_create
+    libc.src.signal.signal_decider_destroy
+    libc.src.signal.siguninstall
+    libc.src.signal.stdc_raise
+    libc.src.stdlib.abort
+)

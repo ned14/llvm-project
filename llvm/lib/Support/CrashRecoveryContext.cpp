@@ -34,14 +34,46 @@ struct CrashRecoveryContextImpl {
   const CrashRecoveryContextImpl *Next;
 
   CrashRecoveryContext *CRC;
-  ::jmp_buf JumpBuffer;
   volatile unsigned Failed : 1;
   unsigned SwitchedThread : 1;
+#if !LLVM_ENABLE_THREADSAFE_SIGNALS
+  // The legacy recovery jump buffer: RunSafely() setjmps here and
+  // HandleCrash() longjmps back. The threadsafe path has no jump buffer of
+  // its own - sigguarded() is the whole crash-recovery mechanism - so these
+  // members do not exist there.
+  ::jmp_buf JumpBuffer;
   unsigned ValidJumpBuffer : 1;
+#endif
+#if LLVM_ENABLE_THREADSAFE_SIGNALS
+  // The threadsafe path (sigguarded() in RunSafely()) stores its
+  // per-invocation state here on the context itself: the CRCI pointer is the
+  // sigguarded() value parameter, so every callback receives it directly
+  // instead of fishing it out of thread-local storage.
+  //   - Fn: the guarded function being run by RunSafely().
+  //   - CrashHandled: set by the recovery callback so RunSafely() can tell a
+  //     crash-recovery outcome (sigguarded() returned the recovery callback's
+  //     value) from a normal completion of the guarded function.
+  //   - PendingExit / PendingExitRetCode: HandleExit() carries the requested
+  //     process exit code out through the recovery path - it sets PendingExit
+  //     before raising SIGABRT through the guard, and the recovery callback
+  //     records the code verbatim instead of deriving 128 + signo.
+  unsigned PendingExit : 1;
+  int PendingExitRetCode;
+  unsigned CrashHandled : 1;
+  llvm::function_ref<void()> Fn;
+#endif
 
 public:
   CrashRecoveryContextImpl(CrashRecoveryContext *CRC) noexcept
-      : CRC(CRC), Failed(false), SwitchedThread(false), ValidJumpBuffer(false) {
+      : CRC(CRC), Failed(false), SwitchedThread(false)
+#if LLVM_ENABLE_THREADSAFE_SIGNALS
+        ,
+        PendingExit(false), PendingExitRetCode(0), CrashHandled(false)
+#else
+        ,
+        ValidJumpBuffer(false)
+#endif
+  {
     Next = CurrentContext;
     CurrentContext = this;
   }
@@ -75,12 +107,18 @@ public:
 
     CRC->RetCode = RetCode;
 
+#if !LLVM_ENABLE_THREADSAFE_SIGNALS
     // Jump back to the RunSafely we were called under.
     if (ValidJumpBuffer)
       longjmp(JumpBuffer, 1);
 
     // Otherwise let the caller decide of the outcome of the crash. Currently
     // this occurs when using SEH on Windows with MSVC or clang-cl.
+#else
+    // The threadsafe path has no jump buffer: HandleCrash() returns and the
+    // caller (the sigguarded() recovery function) lets sigguarded() return
+    // the recorded crash to RunSafely().
+#endif
   }
 };
 
@@ -353,8 +391,52 @@ static void uninstallExceptionOrSignalHandlers() {
 static const int Signals[] =
     { SIGABRT, SIGBUS, SIGFPE, SIGILL, SIGSEGV, SIGTRAP };
 static const unsigned NumSignals = std::size(Signals);
+#if !LLVM_ENABLE_THREADSAFE_SIGNALS
 static struct sigaction PrevActions[NumSignals];
+#endif
 
+#if LLVM_ENABLE_THREADSAFE_SIGNALS
+#include "wg14_signals/thrd_signal_handle.h"
+
+// The wg14 threadsafe crash-recovery path: Enable() installs the library's
+// filtering raw handler for the crash signals, and each RunSafely() runs the
+// guarded function inside a sigguarded() region whose frame decider triggers
+// recovery.
+
+static void *WG14CrashRecoveryInstallToken = nullptr;
+static sigset_t WG14CrashRecoverySet;
+
+static void installExceptionOrSignalHandlersThreadsafe(
+    bool NeedsPOSIXUtilitySignalHandling) {
+  sigemptyset(&WG14CrashRecoverySet);
+  for (unsigned i = 0; i != NumSignals; ++i) {
+    if (NeedsPOSIXUtilitySignalHandling) {
+      // Don't install a handler if the signal disposition is SIG_IGN.
+      struct sigaction Act;
+      if (sigaction(Signals[i], NULL, &Act) == 0 && Act.sa_handler != SIG_IGN)
+        sigaddset(&WG14CrashRecoverySet, Signals[i]);
+    } else {
+      sigaddset(&WG14CrashRecoverySet, Signals[i]);
+    }
+  }
+  // siginstall() is refcounted per signal, so it coexists with the
+  // RegisterHandlers() installation in Signals.inc; the first installation
+  // captures the pre-LLVM disposition, and the raw handler is removed only
+  // when the last reference is released.
+  WG14CrashRecoveryInstallToken = siginstall(&WG14CrashRecoverySet);
+  // On failure (allocation), crash recovery silently stays unavailable and a
+  // crash takes the default action.
+}
+
+static void uninstallExceptionOrSignalHandlersThreadsafe() {
+  if (WG14CrashRecoveryInstallToken) {
+    siguninstall(WG14CrashRecoveryInstallToken);
+    WG14CrashRecoveryInstallToken = nullptr;
+  }
+}
+#endif // LLVM_ENABLE_THREADSAFE_SIGNALS
+
+#if !LLVM_ENABLE_THREADSAFE_SIGNALS
 static void CrashRecoverySignalHandler(int Signal) {
   // Lookup the current thread local recovery object.
   const CrashRecoveryContextImpl *CRCI = CurrentContext;
@@ -395,9 +477,14 @@ static void CrashRecoverySignalHandler(int Signal) {
   if (CRCI)
     const_cast<CrashRecoveryContextImpl *>(CRCI)->HandleCrash(RetCode, Signal);
 }
+#endif // !LLVM_ENABLE_THREADSAFE_SIGNALS
 
 static void
 installExceptionOrSignalHandlers(bool NeedsPOSIXUtilitySignalHandling) {
+#if LLVM_ENABLE_THREADSAFE_SIGNALS
+  installExceptionOrSignalHandlersThreadsafe(NeedsPOSIXUtilitySignalHandling);
+  return;
+#else
   // Setup the signal handler.
   struct sigaction Handler;
   Handler.sa_handler = CrashRecoverySignalHandler;
@@ -414,12 +501,17 @@ installExceptionOrSignalHandlers(bool NeedsPOSIXUtilitySignalHandling) {
       sigaction(Signals[i], &Handler, &PrevActions[i]);
     }
   }
+#endif
 }
 
 static void uninstallExceptionOrSignalHandlers() {
+#if LLVM_ENABLE_THREADSAFE_SIGNALS
+  uninstallExceptionOrSignalHandlersThreadsafe();
+#else
   // Restore the previous signal handlers.
   for (unsigned i = 0; i != NumSignals; ++i)
     sigaction(Signals[i], &PrevActions[i], nullptr);
+#endif
 }
 
 #endif // !_WIN32
@@ -431,10 +523,113 @@ bool CrashRecoveryContext::RunSafely(function_ref<void()> Fn) {
     CrashRecoveryContextImpl *CRCI = new CrashRecoveryContextImpl(this);
     Impl = CRCI;
 
+#if LLVM_ENABLE_THREADSAFE_SIGNALS
+    // Run the function inside a sigguarded() region. sigguarded() IS the
+    // crash-recovery mechanism: a signal in the crash set delivered to this
+    // thread runs the frame decider, which requests recovery; the wg14
+    // machinery then longjmps back to its own call site and invokes the
+    // recovery function, whose return value sigguarded() returns. No jmp_buf
+    // is taken here and nothing longjmps up to RunSafely(), so there is no
+    // second longjmp chained after the wg14 one. The per-invocation state
+    // (Fn, CrashHandled, and HandleExit's pending exit code) lives on the
+    // CrashRecoveryContextImpl, and the CRCI pointer itself travels through
+    // sigguarded()'s value parameter - the documented N3924 channel for
+    // caller state - so every callback receives it directly instead of
+    // fishing it out of thread-local storage. The callbacks are
+    // non-capturing lambdas with a unary '+' to force the conversion to
+    // plain C-compatible function pointers of the wg14 callback types on any
+    // C++ standard.
+    CRCI->Fn = Fn;
+    stdc_siginfo_value Result = sigguarded(
+        &WG14CrashRecoverySet,
+        // The guarded function: run the user's function.
+        +[](stdc_siginfo_value Value) -> stdc_siginfo_value {
+          auto *CRCI = (CrashRecoveryContextImpl *)Value.ptr_value;
+          assert(CRCI && "guarded function called without crash recovery "
+                         "state");
+          if (CRCI->Fn)
+            CRCI->Fn();
+          return Value;
+        },
+        // The recovery function: the wg14 machinery has longjmp'ed
+        // back to its own sigguarded() call site and popped the
+        // guard frame, so this runs in normal thread context inside
+        // RunSafely()'s frame with the whole crash bookkeeping
+        // still to do. It records the crash on the context (removes
+        // the current context entry, runs the cleanups, stores
+        // RetCode) but does NOT longjmp: sigguarded() returns the
+        // recovery function's value, and RunSafely() acts on the
+        // CrashHandled flag instead.
+        +[](const struct stdc_siginfo *Rsi) -> stdc_siginfo_value {
+          auto *CRCI = (CrashRecoveryContextImpl *)Rsi->value.ptr_value;
+          assert(CRCI && "recovery called without crash recovery state");
+
+          int RetCode;
+          if (CRCI->PendingExit) {
+            // HandleExit(): the guarded function requested a
+            // process exit with an arbitrary exit code; record it
+            // verbatim.
+            RetCode = CRCI->PendingExitRetCode;
+            CRCI->PendingExit = false;
+          } else {
+            // Return the same error code as if the program crashed,
+            // as mentioned in the section "Exit Status for
+            // Commands":
+            // https://pubs.opengroup.org/onlinepubs/9699919799/xrat/V4_xcu_chap02.html
+            RetCode = 128 + Rsi->signo;
+
+            // Don't consider a broken pipe as a crash (see
+            // clang/lib/Driver/Driver.cpp)
+            if (Rsi->signo == SIGPIPE)
+              RetCode = EX_IOERR;
+          }
+
+          // In the threadsafe path ValidJumpBuffer is never set, so
+          // HandleCrash() performs the bookkeeping and returns
+          // instead of longjmp'ing.
+          CRCI->HandleCrash(RetCode, Rsi->signo);
+
+          CRCI->CrashHandled = true;
+          return stdc_siginfo_value((void *)CRCI);
+        },
+        // The decider: recover when the raise reached one of our
+        // sigguarded() frames (its value carries our context);
+        // otherwise let the previous handler / default action run
+        // (the legacy handler disabled crash recovery and re-raised
+        // the signal).
+        +[](struct stdc_siginfo * Rsi)->enum sig_decision {
+          if (Rsi->value.ptr_value)
+            return sig_decision_call_recovery;
+          return sig_decision_next_decider;
+        },
+        stdc_siginfo_value((void *)CRCI));
+    if (CRCI->CrashHandled) {
+      // The recovery function ran: it removed the current context entry, ran
+      // the cleanup handlers, recorded RetCode on the context and returned
+      // through sigguarded(). Report the crash.
+      return false;
+    }
+    if (Result.int_value == SIGGUARDED_FAILURE_VALUE.int_value) {
+      // sigguarded() returned its documented failure sentinel (it could not
+      // set up its per-thread guard state). This cannot happen on Linux
+      // (WG14_SIGNALS_HAVE_ASYNC_SAFE_THREAD_LOCAL is always true there);
+      // there is no recovery to fall back to, so fail loudly rather than
+      // silently running the function unguarded. report_fatal_error() prints
+      // a diagnostic and aborts in all build modes (unlike llvm_unreachable,
+      // which is UB in Release builds).
+      llvm::report_fatal_error(
+          "CrashRecoveryContext: sigguarded() could not set up its "
+          "per-thread guard state (SIGGUARDED_FAILURE_VALUE)");
+    }
+    return true;
+#else
     CRCI->ValidJumpBuffer = true;
     if (setjmp(CRCI->JumpBuffer) != 0) {
       return false;
     }
+    Fn();
+    return true;
+#endif
   }
 
   Fn();
@@ -455,6 +650,25 @@ bool CrashRecoveryContext::RunSafely(function_ref<void()> Fn) {
   // HandleCrash(), then longjmp will unwind the stack for us.
   CrashRecoveryContextImpl *CRCI = (CrashRecoveryContextImpl *)Impl;
   assert(CRCI && "Crash recovery context never initialized!");
+#if LLVM_ENABLE_THREADSAFE_SIGNALS
+  // In the threadsafe implementation RunSafely() takes no jump buffer of its
+  // own; sigguarded() is the whole crash-recovery mechanism. An exit request
+  // from inside the guarded function therefore has to become a raise that the
+  // innermost guard frame's decider recovers from, with the caller's exit
+  // code carried on the crash recovery context so the recovery function
+  // records it verbatim. stdc_raise() walks the calling thread's guard frames
+  // directly and does not need the raw handler installed, so this works even
+  // if the installations were torn down mid-guard.
+  CRCI->PendingExit = true;
+  CRCI->PendingExitRetCode = RetCode;
+  stdc_raise(SIGABRT, nullptr, nullptr);
+  // The raise must have unwound the stack through the guard's recovery, so
+  // control can only reach here if no guard frame exists (e.g. sigguarded()
+  // failed its per-thread setup and RunSafely() fell back to running the
+  // function unguarded) or a nested user frame consumed the raise. Either
+  // way HandleExit must not return.
+  llvm_unreachable("HandleExit could not recover through an active guard");
+#endif
   CRCI->HandleCrash(RetCode, 0 /*no sig num*/);
 #endif
   llvm_unreachable("Most likely setjmp wasn't called!");

@@ -1467,6 +1467,24 @@ if(LLVM_LIBC_FULL_BUILD)
     libc.src.signal.sigdelset
     libc.src.signal.sigemptyset
     libc.src.signal.sigfillset
+    libc.src.signal.sigismember
+    libc.src.signal.sigfillset_synchronous
+    libc.src.signal.sigfillset_asynchronous_nondebug
+    libc.src.signal.sigfillset_asynchronous_debug
+    libc.src.signal.sigguarded
+    libc.src.signal.sigdecider_abandon
+    libc.src.signal.sigdecider_abandon_resume
+    libc.src.signal.stdc_raise
+    libc.src.signal.siginstall
+    libc.src.signal.siguninstall
+    libc.src.signal.siguninstall_system
+    libc.src.signal.signal_decider_create
+    libc.src.signal.signal_decider_destroy
+    libc.src.threads.tss_async_signal_safe_create
+    libc.src.threads.tss_async_signal_safe_destroy
+    libc.src.threads.tss_async_signal_safe_thread_init
+    libc.src.threads.tss_async_signal_safe_get
+    libc.src.threads.current_thread_id
     libc.src.signal.signal
     libc.src.signal.sigprocmask
 

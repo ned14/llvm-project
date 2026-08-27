@@ -1332,3 +1332,82 @@ add_proxy_header_library(
   FULL_BUILD_DEPENDS
     libc.include.llvm-libc-types.tcflag_t
 )
+add_proxy_header_library(
+  global_signal_decider_t
+  HDRS
+    global_signal_decider_t.h
+  FULL_BUILD_DEPENDS
+    libc.include.llvm-libc-types.global_signal_decider_t
+)
+
+add_proxy_header_library(
+  sig_decide_t
+  HDRS
+    sig_decide_t.h
+  FULL_BUILD_DEPENDS
+    libc.include.llvm-libc-types.sig_decide_t
+)
+
+add_proxy_header_library(
+  sig_decision
+  HDRS
+    sig_decision.h
+  FULL_BUILD_DEPENDS
+    libc.include.llvm-libc-types.sig_decision
+)
+
+add_proxy_header_library(
+  sig_func_t
+  HDRS
+    sig_func_t.h
+  FULL_BUILD_DEPENDS
+    libc.include.llvm-libc-types.sig_func_t
+)
+
+add_proxy_header_library(
+  sig_recover_t
+  HDRS
+    sig_recover_t.h
+  FULL_BUILD_DEPENDS
+    libc.include.llvm-libc-types.sig_recover_t
+)
+
+add_proxy_header_library(
+  struct_stdc_siginfo
+  HDRS
+    struct_stdc_siginfo.h
+  FULL_BUILD_DEPENDS
+    libc.include.llvm-libc-types.struct_stdc_siginfo
+)
+
+add_proxy_header_library(
+  union_stdc_siginfo_value
+  HDRS
+    union_stdc_siginfo_value.h
+  FULL_BUILD_DEPENDS
+    libc.include.llvm-libc-types.union_stdc_siginfo_value
+)
+
+add_proxy_header_library(
+  thread_id_t
+  HDRS
+    thread_id_t.h
+  FULL_BUILD_DEPENDS
+    libc.include.llvm-libc-types.thread_id_t
+)
+
+add_proxy_header_library(
+  tss_async_signal_safe_t
+  HDRS
+    tss_async_signal_safe_t.h
+  FULL_BUILD_DEPENDS
+    libc.include.llvm-libc-types.tss_async_signal_safe_t
+)
+
+add_proxy_header_library(
+  struct_tss_async_signal_safe_attr
+  HDRS
+    struct_tss_async_signal_safe_attr.h
+  FULL_BUILD_DEPENDS
+    libc.include.llvm-libc-types.struct_tss_async_signal_safe_attr
+)

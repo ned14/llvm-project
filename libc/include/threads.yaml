@@ -1,6 +1,8 @@
 header: threads.h
 standards:
   - stdc
+extra_standards:
+  n3924: WG14 N3924
 macros:
   - macro_name: ONCE_FLAG_INIT
     macro_value: '{0}'
@@ -13,6 +15,15 @@ types:
   - type_name: thrd_t
   - type_name: tss_t
   - type_name: tss_dtor_t
+  - type_name: thread_id_t
+    standards:
+      - n3924
+  - type_name: tss_async_signal_safe_t
+    standards:
+      - n3924
+  - type_name: struct_tss_async_signal_safe_attr
+    standards:
+      - n3924
   - type_name: struct_timespec
 enums:
   - name: mtx_plain
@@ -176,3 +187,38 @@ functions:
     arguments:
       - type: tss_t
       - type: void *
+  # WG14 N3924 improved C signals, 7.30.6.5 through 7.30.6.8: the
+  # async-signal-safe thread-specific storage functions (in <threads.h> per
+  # the N3924 proposed wording; implemented by the wg14_signals submodule).
+  - name: tss_async_signal_safe_create
+    standards:
+      - n3924
+    return_type: int
+    arguments:
+      - type: tss_async_signal_safe_t *
+      - type: const struct tss_async_signal_safe_attr *
+  - name: tss_async_signal_safe_destroy
+    standards:
+      - n3924
+    return_type: int
+    arguments:
+      - type: tss_async_signal_safe_t
+  - name: tss_async_signal_safe_thread_init
+    standards:
+      - n3924
+    return_type: int
+    arguments:
+      - type: tss_async_signal_safe_t
+  - name: tss_async_signal_safe_get
+    standards:
+      - n3924
+    return_type: void *
+    arguments:
+      - type: tss_async_signal_safe_t
+  # WG14 N3924 improved C signals: current_thread_id (in <threads.h> per the
+  # N3924 rev 5 wording; implemented by the wg14_signals submodule).
+  - name: current_thread_id
+    standards:
+      - n3924
+    return_type: thread_id_t
+    arguments: []
