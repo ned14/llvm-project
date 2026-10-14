@@ -35,6 +35,7 @@
 #include "Unix.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/Config/config.h"
+#include "llvm/Config/llvm-config.h"
 #include "llvm/Demangle/Demangle.h"
 #include "llvm/Support/ExitCodes.h"
 #include "llvm/Support/FileSystem.h"
@@ -50,9 +51,9 @@
 #ifdef HAVE_BACKTRACE
 #include BACKTRACE_HEADER // For backtrace().
 #endif
+#include <dlfcn.h>
 #include <signal.h>
 #include <sys/stat.h>
-#include <dlfcn.h>
 #if HAVE_MACH_MACH_H
 #include <mach/mach.h>
 #endif
@@ -61,6 +62,10 @@
 #endif
 #if __has_include(<link.h>)
 #include <link.h>
+#endif
+#if LLVM_ENABLE_THREADSAFE_SIGNALS
+#include "LLVMSignalHooks.h"
+#include "wg14_signals/thrd_signal_handle.h"
 #endif
 #ifdef HAVE__UNWIND_BACKTRACE
 // FIXME: We should be able to use <unwind.h> for any target that has an
@@ -86,8 +91,9 @@ using namespace llvm;
 
 static void SignalHandler(int Sig, siginfo_t *Info, void *Context);
 static void SignalHandlerTerminate(int Sig, siginfo_t *Info, void *Context);
-static void InfoSignalHandler(int Sig); // defined below.
+static void InfoSignalHandler(int Sig);          // defined below.
 static void InfoSignalHandlerTerminate(int Sig); // defined below.
+static void RemoveFilesToRemove();               // defined below.
 
 using SignalHandlerFunctionType = void (*)();
 /// The function to call if ctrl-c is pressed.
@@ -320,22 +326,248 @@ static void CreateSigAltStack() {
 static void CreateSigAltStack() {}
 #endif
 
-static void RegisterHandlers(
-    bool NeedsPOSIXUtilitySignalHandling = false) { // Not signal-safe.
-  // The mutex prevents other threads from registering handlers while we're
-  // doing it. We also have to protect the handlers and their count because
-  // a signal handler could fire while we're registering handlers.
-  static ManagedStatic<sys::SmartMutex<true>> SignalHandlerRegistrationMutex;
-  sys::SmartScopedLock<true> Guard(*SignalHandlerRegistrationMutex);
+#if LLVM_ENABLE_THREADSAFE_SIGNALS
+// === wg14_signals integration (Phase 9a) ====================================
+// The threadsafe implementation replaces the raw sigaction-based handler
+// installation: siginstall() installs the library's filtering raw handler
+// (which runs thread-local sigguarded() frames first), and each legacy
+// handler kind becomes its own signal decider with its own guarded signal
+// set (one-shot SIGPIPE function, interrupt function, info function, and the
+// kill-signal cleanup chain). The legacy sigaction-based code remains
+// compiled in and is used as the fallback when the wg14 installation cannot
+// be set up (e.g. allocation failure).
 
-  // If the handlers are already registered, we're done.
-  if (NumRegisteredSignals.load() != 0)
-    return;
+// Token/decider handles of the LLVM-wide wg14 installation:
+//   - WG14SigpipeDecider   guards SIGPIPE  (one-shot pipe function)
+//   - WG14InterruptDecider guards IntSigs  (interrupt function)
+//   - WG14InfoDecider      guards InfoSigs (info function)
+//   - WG14KillDecider      guards KillSigs (cleanup/stack-trace chain)
+static void *WG14InstallToken = nullptr;
+static void *WG14SigpipeInstallToken = nullptr;
+static void *WG14SigpipeDecider = nullptr;
+static void *WG14InterruptDecider = nullptr;
+static void *WG14InfoDecider = nullptr;
+static void *WG14KillDecider = nullptr;
+static sigset_t WG14InstalledSet;
+static bool WG14HandlersRegistered = false;
+static bool WG14TerminateMode = false;
 
-  // Create an alternate stack for signal handling. This is necessary for us to
-  // be able to reliably handle signals due to stack overflow.
-  CreateSigAltStack();
+// Re-entrancy guard. The legacy handler restored the previous dispositions on
+// entry, so a crash inside the handler re-delivered to the previous
+// disposition (typically the default) and the process died immediately. The
+// wg14 raw handler is installed with SA_NODEFER, so a crash inside a decider
+// would otherwise re-enter the chain and recurse; the guard makes a nested
+// delivery skip the chain and take the default action instead. It is checked
+// only on the kill-signal path (info/interrupt signals re-run their chain on
+// nested delivery, matching the legacy handlers' semantics).
+static std::atomic<unsigned> WG14SignalHandlerActive = 0;
 
+// Take a signal's default action (the SIG_DFL disposition handoff from the
+// wg14 library's invoke_sigaction()), preserving the original siginfo so the
+// core dump still records the faulting address etc. On Linux this re-delivers
+// via SYS_rt_tgsigqueueinfo; elsewhere it falls back to raise(). The caller
+// (the library) restores the previous disposition afterwards, so this only
+// needs to reset to SIG_DFL and re-deliver to this thread.
+extern "C" void LLVMSignalDefaultAction(int Signo, siginfo_t *Info,
+                                        void *Context) {
+  (void)Context;
+  struct sigaction Dfl;
+  memset(&Dfl, 0, sizeof(Dfl));
+  Dfl.sa_handler = SIG_DFL;
+  sigaction(Signo, &Dfl, nullptr);
+#if defined(__linux__)
+  if (Info) {
+    int Result = syscall(SYS_rt_tgsigqueueinfo, getpid(), syscall(SYS_gettid),
+                         Signo, Info);
+    if (Result == 0)
+      return;
+  }
+#endif
+  raise(Signo);
+}
+// The one-shot SIGPIPE decider: runs the registered one-shot pipe function
+// (consuming it), exactly like the legacy SignalHandler's SIGPIPE branch, or
+// defers to the default action if none is registered. Each decider is a
+// non-capturing lambda with a unary '+' to force the conversion to a plain
+// C-compatible function pointer of the wg14 sig_decide_t type (works on any
+// C++ standard); signal_decider_create() links a decider only into the
+// per-signal lists of its guarded set, so no decider ever sees a signal it
+// does not guard.
+static auto LLVMSigpipeDecider =
+    +[](struct stdc_siginfo * Rsi)->enum sig_decision {
+  // Unmask all potentially blocked signals, as the legacy handler did, so a
+  // re-raise to the default action cannot pend forever.
+  sigset_t SigMask;
+  sigfillset(&SigMask);
+  sigprocmask(SIG_UNBLOCK, &SigMask, nullptr);
+
+  RemoveFilesToRemove();
+  if (auto OldOneShotPipeFunction =
+          OneShotPipeSignalFunction.exchange(nullptr)) {
+    OldOneShotPipeFunction(); // typically exits the process
+    return sig_decision_resume_execution;
+  }
+  // No one-shot function: take the default action (as the legacy raise()).
+  return sig_decision_next_decider;
+};
+
+// The interrupt decider: runs the registered interrupt function (consuming
+// it), or defers to the default action if none is registered.
+static auto LLVMInterruptDecider =
+    +[](struct stdc_siginfo * Rsi)->enum sig_decision {
+  sigset_t SigMask;
+  sigfillset(&SigMask);
+  sigprocmask(SIG_UNBLOCK, &SigMask, nullptr);
+
+  RemoveFilesToRemove();
+  if (auto OldInterruptFunction = InterruptFunction.exchange(nullptr)) {
+    OldInterruptFunction();
+    return sig_decision_resume_execution;
+  }
+  // No interrupt function: take the default action (as the legacy raise()).
+  return sig_decision_next_decider;
+};
+
+// The info decider: runs the registered info function and resumes execution.
+// The legacy InfoSignalHandler did not remove files, and in terminate mode
+// (POSIX utility signal handling) SIGUSR1 takes the default action instead
+// (legacy InfoSignalHandlerTerminate: unregister + raise).
+static auto LLVMInfoDecider =
+    +[](struct stdc_siginfo * Rsi)->enum sig_decision {
+  sigset_t SigMask;
+  sigfillset(&SigMask);
+  sigprocmask(SIG_UNBLOCK, &SigMask, nullptr);
+
+  SaveAndRestore SaveErrnoDuringASignalHandler(errno);
+  if (SignalHandlerFunctionType CurrentInfoFunction = InfoSignalFunction)
+    CurrentInfoFunction();
+  if (WG14TerminateMode && Rsi->signo == SIGUSR1)
+    return sig_decision_next_decider;
+  return sig_decision_resume_execution;
+};
+
+// The kill-signal decider: runs the registered handler chain (cleanup, stack
+// trace) and then defers to the default action, preserving the siginfo via
+// LLVMSignalDefaultAction() (exit code = signal, core dump records the
+// faulting address).
+static auto LLVMKillSignalDecider =
+    +[](struct stdc_siginfo * Rsi)->enum sig_decision {
+  sigset_t SigMask;
+  sigfillset(&SigMask);
+  sigprocmask(SIG_UNBLOCK, &SigMask, nullptr);
+
+  RemoveFilesToRemove();
+  if (WG14SignalHandlerActive.exchange(1) != 0) {
+    // Nested delivery while a previous kill-signal chain is still in flight:
+    // take the default action immediately, matching the legacy
+    // restore-then-die behaviour on a crash inside the handler.
+    WG14SignalHandlerActive = 0;
+    return sig_decision_next_decider;
+  }
+  llvm::sys::RunSignalHandlers();
+  WG14SignalHandlerActive = 0;
+  return sig_decision_next_decider;
+};
+
+// Install the wg14 raw handler and the LLVM decider for the LLVM signal set.
+// Returns true on success; on failure the legacy sigaction path is used.
+static bool RegisterHandlersThreadsafe(bool NeedsPOSIXUtilitySignalHandling) {
+  WG14TerminateMode = NeedsPOSIXUtilitySignalHandling;
+
+  // The library's raw handler must run on LLVM's alternate signal stack
+  // (created by CreateSigAltStack) so that stack-overflow SIGSEGV handling
+  // keeps working, and default-action hand-offs must re-deliver with the
+  // original siginfo preserved (core-dump fidelity). Both are runtime
+  // settings that apply to every siginstall() performed afterwards; a failure
+  // falls back to the legacy sigaction path below.
+  if (siginstall_set_sa_flags_np(SA_SIGINFO | SA_NOCLDWAIT | SA_NODEFER |
+                                 SA_ONSTACK) != 0 ||
+      siginstall_set_default_action_np(LLVMSignalDefaultAction) != 0)
+    return false;
+
+  // Each legacy handler kind guards its own signals; the union of the sets is
+  // what gets installed. signal_decider_create() rejects an empty guarded
+  // set, and the SIG_IGN filter (utility mode) can empty any of them, so
+  // track per-set membership.
+  sigset_t Guarded, PipeSet, IntSet, InfoSet, KillSet;
+  sigemptyset(&Guarded);
+  sigemptyset(&PipeSet);
+  sigemptyset(&IntSet);
+  sigemptyset(&InfoSet);
+  sigemptyset(&KillSet);
+  bool Any = false, AnyPipe = false, AnyInt = false, AnyInfo = false,
+       AnyKill = false;
+  auto AddSignal = [&](int Sig, sigset_t &Set, bool &AnyInSet) {
+    if (NeedsPOSIXUtilitySignalHandling) {
+      // Don't install a handler if the signal disposition is SIG_IGN.
+      struct sigaction Act;
+      if (sigaction(Sig, nullptr, &Act) == 0 && Act.sa_handler == SIG_IGN)
+        return;
+    }
+    sigaddset(&Set, Sig);
+    sigaddset(&Guarded, Sig);
+    Any = true;
+    AnyInSet = true;
+  };
+  for (auto S : IntSigs)
+    AddSignal(S, IntSet, AnyInt);
+  for (auto S : KillSigs)
+    AddSignal(S, KillSet, AnyKill);
+  if (OneShotPipeSignalFunction)
+    AddSignal(SIGPIPE, PipeSet, AnyPipe);
+  for (auto S : InfoSigs)
+    AddSignal(S, InfoSet, AnyInfo);
+
+  if (Any) {
+    WG14InstallToken = siginstall(&Guarded);
+    if (!WG14InstallToken)
+      return false;
+    // Create one decider per handler kind, each guarding only its own
+    // signals; the deciders are added to the chain in legacy sequence order
+    // (their sets are disjoint, so ordering only matters for readability).
+    stdc_siginfo_value Value;
+    bool Ok = true;
+    auto CreateDecider = [&](bool AnyInSet, const sigset_t &Set, void *&Handle,
+                             enum sig_decision (*Fn)(struct stdc_siginfo *)) {
+      if (!AnyInSet)
+        return;
+      Handle = signal_decider_create(&Set, false, Fn, Value);
+      if (!Handle)
+        Ok = false;
+    };
+    CreateDecider(AnyPipe, PipeSet, WG14SigpipeDecider, LLVMSigpipeDecider);
+    CreateDecider(AnyInt, IntSet, WG14InterruptDecider, LLVMInterruptDecider);
+    CreateDecider(AnyInfo, InfoSet, WG14InfoDecider, LLVMInfoDecider);
+    CreateDecider(AnyKill, KillSet, WG14KillDecider, LLVMKillSignalDecider);
+    if (!Ok) {
+      // Destroy the deciders before uninstalling the raw handlers so no
+      // decider node dangles off a live signal entry.
+      if (WG14SigpipeDecider)
+        signal_decider_destroy(WG14SigpipeDecider);
+      if (WG14InterruptDecider)
+        signal_decider_destroy(WG14InterruptDecider);
+      if (WG14InfoDecider)
+        signal_decider_destroy(WG14InfoDecider);
+      if (WG14KillDecider)
+        signal_decider_destroy(WG14KillDecider);
+      siguninstall(WG14InstallToken);
+      WG14SigpipeDecider = nullptr;
+      WG14InterruptDecider = nullptr;
+      WG14InfoDecider = nullptr;
+      WG14KillDecider = nullptr;
+      WG14InstallToken = nullptr;
+      return false;
+    }
+  }
+  WG14InstalledSet = Guarded;
+  WG14HandlersRegistered = true;
+  return true;
+}
+#endif // LLVM_ENABLE_THREADSAFE_SIGNALS
+
+// The legacy sigaction-based registration, kept as the fallback and for
+// platforms where LLVM_ENABLE_THREADSAFE_SIGNALS is off.
+static void RegisterHandlersLegacy(bool NeedsPOSIXUtilitySignalHandling) {
   enum class SignalKind { IsKill, IsInfo };
   auto registerHandler = [&](int Signal, SignalKind Kind) {
     unsigned Index = NumRegisteredSignals.load();
@@ -388,7 +620,61 @@ static void RegisterHandlers(
     registerHandler(S, SignalKind::IsInfo);
 }
 
+static void RegisterHandlers(
+    bool NeedsPOSIXUtilitySignalHandling = false) { // Not signal-safe.
+  // The mutex prevents other threads from registering handlers while we're
+  // doing it. We also have to protect the handlers and their count because
+  // a signal handler could fire while we're registering handlers.
+  static ManagedStatic<sys::SmartMutex<true>> SignalHandlerRegistrationMutex;
+  sys::SmartScopedLock<true> Guard(*SignalHandlerRegistrationMutex);
+
+  // If the handlers are already registered, we're done.
+  if (NumRegisteredSignals.load() != 0
+#if LLVM_ENABLE_THREADSAFE_SIGNALS
+      || WG14HandlersRegistered
+#endif
+  )
+    return;
+
+  // Create an alternate stack for signal handling. This is necessary for us to
+  // be able to reliably handle signals due to stack overflow.
+  CreateSigAltStack();
+
+#if LLVM_ENABLE_THREADSAFE_SIGNALS
+  if (RegisterHandlersThreadsafe(NeedsPOSIXUtilitySignalHandling))
+    return;
+#endif
+
+  RegisterHandlersLegacy(NeedsPOSIXUtilitySignalHandling);
+}
+
 void sys::unregisterHandlers() {
+#if LLVM_ENABLE_THREADSAFE_SIGNALS
+  if (WG14HandlersRegistered) {
+    // Destroy the deciders before uninstalling the raw handlers so no decider
+    // node dangles off a live signal entry.
+    if (WG14SigpipeDecider)
+      signal_decider_destroy(WG14SigpipeDecider);
+    if (WG14SigpipeInstallToken)
+      siguninstall(WG14SigpipeInstallToken);
+    if (WG14InterruptDecider)
+      signal_decider_destroy(WG14InterruptDecider);
+    if (WG14InfoDecider)
+      signal_decider_destroy(WG14InfoDecider);
+    if (WG14KillDecider)
+      signal_decider_destroy(WG14KillDecider);
+    if (WG14InstallToken)
+      siguninstall(WG14InstallToken);
+    WG14SigpipeDecider = nullptr;
+    WG14SigpipeInstallToken = nullptr;
+    WG14InterruptDecider = nullptr;
+    WG14InfoDecider = nullptr;
+    WG14KillDecider = nullptr;
+    WG14InstallToken = nullptr;
+    WG14HandlersRegistered = false;
+    return;
+  }
+#endif
   // Restore all of the signal handlers to how they were before we showed up.
   for (unsigned i = 0, e = NumRegisteredSignals.load(); i != e; ++i) {
     sigaction(RegisteredSignalInfo[i].SigNo, &RegisteredSignalInfo[i].SA,
@@ -549,6 +835,31 @@ void llvm::sys::SetInfoSignalFunction(void (*Handler)()) {
 
 void llvm::sys::SetOneShotPipeSignalFunction(void (*Handler)()) {
   OneShotPipeSignalFunction.exchange(Handler);
+#if LLVM_ENABLE_THREADSAFE_SIGNALS
+  if (Handler && WG14HandlersRegistered &&
+      !sigismember(&WG14InstalledSet, SIGPIPE)) {
+    // The first registration ran before a one-shot pipe function existed, so
+    // SIGPIPE was not installed (the legacy path silently missed this case
+    // too, because RegisterHandlers() early-returns). Install SIGPIPE now so
+    // the one-shot function can fire.
+    sigset_t PipeSet;
+    sigemptyset(&PipeSet);
+    sigaddset(&PipeSet, SIGPIPE);
+    void *Token = siginstall(&PipeSet);
+    if (Token) {
+      stdc_siginfo_value Value;
+      void *Decider =
+          signal_decider_create(&PipeSet, false, LLVMSigpipeDecider, Value);
+      if (Decider) {
+        WG14SigpipeInstallToken = Token;
+        WG14SigpipeDecider = Decider;
+        sigaddset(&WG14InstalledSet, SIGPIPE);
+      } else {
+        siguninstall(Token);
+      }
+    }
+  }
+#endif
   RegisterHandlers();
 }
 

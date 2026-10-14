@@ -98,6 +98,10 @@
 /* Define if zstd compression is available */
 #cmakedefine01 LLVM_ENABLE_ZSTD
 
+/* Define if using the wg14_signals threadsafe signal implementation in
+ * llvm/lib/Support */
+#cmakedefine01 LLVM_ENABLE_THREADSAFE_SIGNALS
+
 /* Define if LLVM is using tflite */
 #cmakedefine LLVM_HAVE_TFLITE
 

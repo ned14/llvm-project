@@ -11,6 +11,8 @@
 
 #if defined(__x86_64__)
 #include "x86_64/ucontext_t.h"
+#elif defined(__aarch64__)
+#include "aarch64/ucontext_t.h"
 #else
 #error "ucontext_t not available for your target architecture."
 #endif

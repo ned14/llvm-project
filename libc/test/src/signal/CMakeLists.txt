@@ -1,5 +1,7 @@
 add_custom_target(libc_signal_unittests)
 
+add_subdirectory(wg14)
+
 add_libc_test(
   raise_test
   SUITE

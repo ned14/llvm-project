@@ -214,6 +214,12 @@ add_macro_header(
 )
 
 add_macro_header(
+  sigfence_macros
+  HDR
+    sigfence-macros.h
+)
+
+add_macro_header(
   stdbit_macros
   HDR
     stdbit-macros.h

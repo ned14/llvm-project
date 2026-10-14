@@ -670,6 +670,23 @@ set(LLVM_ENABLE_ZSTD "ON" CACHE STRING "Use zstd for compression/decompression i
 
 set(LLVM_USE_STATIC_ZSTD FALSE CACHE BOOL "Use static version of zstd. Can be TRUE, FALSE")
 
+# Use the wg14_signals threadsafe signal implementation (the WG14 N3924
+# improved-signals library vendored as the libc/src/signal/wg14 submodule) for
+# llvm/lib/Support's signal handling: RegisterHandlers installs via
+# siginstall() + a global decider chain, CrashRecoveryContext guards via
+# sigguarded(), and sys::Wait's SIGALRM timeout via a temporary decider. The
+# replacement is default-ON on Linux only; other platforms keep the legacy
+# sigaction-based code until their phases land.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  set(LLVM_ENABLE_THREADSAFE_SIGNALS_DEFAULT ON)
+else()
+  set(LLVM_ENABLE_THREADSAFE_SIGNALS_DEFAULT OFF)
+endif()
+option(LLVM_ENABLE_THREADSAFE_SIGNALS
+  "Use the wg14_signals threadsafe signal implementation in llvm/lib/Support"
+  ${LLVM_ENABLE_THREADSAFE_SIGNALS_DEFAULT}
+)
+
 set(LLVM_ENABLE_CURL "OFF" CACHE STRING "Use libcurl for the HTTP client if available. Can be ON, OFF, or FORCE_ON")
 
 set(LLVM_HAS_LOGF128 "OFF" CACHE STRING "Use logf128 to constant fold fp128 logarithm calls. Can be ON, OFF, or FORCE_ON")
