@@ -16,6 +16,7 @@ add_libc_test(
     wg14_raise_semantics_test.cpp
   DEPENDS
     libc.include.signal
+    libc.include.ucontext
     libc.hdr.errno_macros
     libc.hdr.signal_macros
     libc.hdr.types.siginfo_t
@@ -29,7 +30,30 @@ add_libc_test(
     libc.src.signal.signal_decider_create
     libc.src.signal.signal_decider_destroy
     libc.src.signal.siguninstall
+    libc.src.signal.sighandle
+)
+
+add_libc_test(
+  wg14_stdc_raise_test
+  SUITE
+    libc_signal_wg14_unittests
+  SRCS
+    wg14_stdc_raise_test.cpp
+  DEPENDS
+    libc.include.signal
+    libc.hdr.signal_macros
+    libc.hdr.types.siginfo_t
+    libc.hdr.types.sigset_t
+    libc.hdr.types.struct_stdc_siginfo
+    libc.hdr.types.union_stdc_siginfo_value
+    libc.src.signal.sigaddset
+    libc.src.signal.sigemptyset
+    libc.src.signal.sighandle
+    libc.src.signal.siginstall
+    libc.src.signal.signal_decider_create
+    libc.src.signal.signal_decider_destroy
     libc.src.signal.stdc_raise
+    libc.src.signal.siguninstall
 )
 
 add_libc_test(
@@ -56,7 +80,7 @@ add_libc_test(
     libc.src.signal.signal_decider_create
     libc.src.signal.siguninstall
     libc.src.signal.siguninstall_system
-    libc.src.signal.stdc_raise
+    libc.src.signal.sighandle
 )
 
 add_libc_test(
@@ -79,7 +103,7 @@ add_libc_test(
     libc.src.signal.signal_decider_create
     libc.src.signal.signal_decider_destroy
     libc.src.signal.siguninstall
-    libc.src.signal.stdc_raise
+    libc.src.signal.sighandle
     libc.src.stdlib._Exit
 )
 
@@ -104,7 +128,7 @@ add_libc_test(
     libc.src.signal.signal_decider_create
     libc.src.signal.signal_decider_destroy
     libc.src.signal.siguninstall
-    libc.src.signal.stdc_raise
+    libc.src.signal.sighandle
     libc.src.stdio.stderr
     libc.src.stdio.vfprintf
 )
@@ -131,7 +155,7 @@ add_libc_test(
     libc.src.signal.signal_decider_create
     libc.src.signal.signal_decider_destroy
     libc.src.signal.siguninstall
-    libc.src.signal.stdc_raise
+    libc.src.signal.sighandle
     libc.src.threads.thrd_create
     libc.src.threads.thrd_join
     libc.src.unistd.getpid
@@ -179,6 +203,6 @@ add_libc_test(
     libc.src.signal.signal_decider_create
     libc.src.signal.signal_decider_destroy
     libc.src.signal.siguninstall
-    libc.src.signal.stdc_raise
+    libc.src.signal.sighandle
     libc.src.stdlib.abort
 )

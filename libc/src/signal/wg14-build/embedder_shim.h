@@ -52,6 +52,17 @@ int wg14_embedder_sigaction(int signum, const struct sigaction *act,
 void wg14_embedder_abort(void);
 int wg14_embedder_kill_self(int signo);
 long wg14_embedder_gettid(void);
+int wg14_embedder_raise_with_token(int signo, union sigval value);
+
+// The reference's stdc_raise()/sighandle() default-context construction
+// (N3924 7.14.2.9 p8) routes through the WG14_SIGNALS_GETCONTEXT() hook
+// (config.h). libc implements getcontext() on x86_64 only, so point the hook
+// at a shim that captures the calling frame into the caller's ucontext_t on
+// every target (see embedder_shim.cpp). The pointer crosses as void * so this
+// header needs no <ucontext.h> and does not depend on the ucontext_t typedef's
+// struct tag; the shim casts it back.
+int wg14_embedder_getcontext(void *uc);
+#define WG14_SIGNALS_GETCONTEXT(uc) wg14_embedder_getcontext((void *)(uc))
 
 // Host-call bridge (wg14_hostcalls.cpp): routes the submodule's remaining
 // host calls (memory, sigset helpers, setjmp/longjmp, pthread keys,
@@ -84,6 +95,8 @@ int wg14_hostcall_stderr_printf(const char *format, ...)
 #define WG14_SIGNALS_ABORT() wg14_embedder_abort()
 #define WG14_SIGNALS_KILL_SELF(signo) wg14_embedder_kill_self(signo)
 #define WG14_SIGNALS_GETTID() wg14_embedder_gettid()
+#define WG14_SIGNALS_RAISE_WITH_TOKEN(signo, sigval)                           \
+  wg14_embedder_raise_with_token((signo), (sigval))
 #define WG14_SIGNALS_MEMCPY(dest, src, n)                                      \
   wg14_hostcall_memcpy((dest), (src), (n))
 #define WG14_SIGNALS_MEMSET(dest, c, n) wg14_hostcall_memset((dest), (c), (n))

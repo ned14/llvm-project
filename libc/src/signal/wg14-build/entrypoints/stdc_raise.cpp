@@ -1,4 +1,4 @@
-//===-- WG14 N3924 stdc_raise entrypoint wrapper -----------------*- C++
+//===-- WG14 N3924 stdc_raise entrypoint wrapper ---------------*- C++
 //-*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
@@ -19,19 +19,16 @@
 #include "src/__support/common.h"
 #include "src/__support/macros/config.h"
 
-extern "C"
-{
+extern "C" {
 
-  bool wg14_signals_stdc_raise(int signo, void *raw_info, void *raw_context);
+int wg14_signals_stdc_raise(int signo, void *raw_info, void *raw_context);
 }
 
-namespace LIBC_NAMESPACE_DECL
-{
+namespace LIBC_NAMESPACE_DECL {
 
-  LLVM_LIBC_FUNCTION(bool, stdc_raise,
-                     (int signo, void *raw_info, void *raw_context))
-  {
-    return wg14_signals_stdc_raise(signo, raw_info, raw_context);
-  }
+LLVM_LIBC_FUNCTION(int, stdc_raise,
+                   (int signo, void *raw_info, void *raw_context)) {
+  return wg14_signals_stdc_raise(signo, raw_info, raw_context);
+}
 
-}  // namespace LIBC_NAMESPACE_DECL
+} // namespace LIBC_NAMESPACE_DECL

@@ -1,4 +1,4 @@
-//===-- wg14_signals stdc_raise semantics (hermetic port) -----------------===//
+//===-- wg14_signals sighandle semantics (hermetic port) -----------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -8,12 +8,12 @@
 ///
 /// \file
 /// Hermetic ports of the wg14_signals reference-implementation tests
-/// stdc_raise_zero_test.c (analysis.md 1.4), stdc_raise_uninstalled_test.c
-/// (2.16/W5), stdc_raise_null_info_test.c (2.14/W2) and
-/// out_of_range_signo_test.c (NEGS): the N3924 stdc_raise() contract --
+/// sighandle_zero_test.c (analysis.md 1.4), sighandle_uninstalled_test.c
+/// (2.16/W5), sighandle_null_info_test.c (2.14/W2) and
+/// out_of_range_signo_test.c (NEGS): the N3924 sighandle() contract --
 /// setup-call semantics, "no decider installed" returning false without
-/// delivery, deterministic zeroed fields for NULL info, and out-of-range
-/// signo rejection before the frame walk.
+/// delivery, constructed default fields for NULL info (N3924 7.14.2.9
+/// p7/p8), and out-of-range signo rejection before the frame walk.
 ///
 //===----------------------------------------------------------------------===//
 
@@ -26,14 +26,15 @@
 #include "src/signal/sigaddset.h"
 #include "src/signal/sigemptyset.h"
 #include "src/signal/sigguarded.h"
+#include "src/signal/sighandle.h"
 #include "src/signal/siginstall.h"
 #include "src/signal/signal_decider_create.h"
 #include "src/signal/signal_decider_destroy.h"
 #include "src/signal/siguninstall.h"
-#include "src/signal/stdc_raise.h"
 #include "test/UnitTest/Test.h"
 
 #include <stdint.h>
+#include <ucontext.h>
 
 namespace {
 
@@ -43,10 +44,10 @@ namespace {
 // The documented one-line library setup call: must set up this thread's TLS
 // state and return false doing nothing else (analysis.md 1.4).
 TEST(LlvmLibcWg14Raise, RaiseZeroIsSetup) {
-  EXPECT_FALSE(LIBC_NAMESPACE::stdc_raise(0, nullptr, nullptr));
+  EXPECT_FALSE(LIBC_NAMESPACE::sighandle(0, nullptr, nullptr));
 }
 
-// stdc_raise() of a supported signo with no handler installed returns false
+// sighandle() of a supported signo with no handler installed returns false
 // without delivering the signal (analysis.md 2.16/W5), both directly and
 // inside a sigguarded() frame guarding a different signal; once installed
 // and claimed it returns true.
@@ -62,12 +63,12 @@ static union stdc_siginfo_value noop_recovery(const struct stdc_siginfo *rsi) {
 static bool guarded_raise_returned_false = false;
 static union stdc_siginfo_value guarded_func(union stdc_siginfo_value value) {
   guarded_raise_returned_false =
-      !LIBC_NAMESPACE::stdc_raise(SIGNAL_TO_USE, nullptr, nullptr);
+      !LIBC_NAMESPACE::sighandle(SIGNAL_TO_USE, nullptr, nullptr);
   return value;
 }
 
 TEST(LlvmLibcWg14Raise, UninstalledRaiseReturnsFalse) {
-  (void)LIBC_NAMESPACE::stdc_raise(0, nullptr, nullptr);
+  (void)LIBC_NAMESPACE::sighandle(0, nullptr, nullptr);
 
   // Install only OTHER_SIGNAL so SIGNAL_TO_USE stays "no handler installed".
   sigset_t base{};
@@ -76,7 +77,7 @@ TEST(LlvmLibcWg14Raise, UninstalledRaiseReturnsFalse) {
   void *handlers = LIBC_NAMESPACE::siginstall(&base);
   ASSERT_NE(handlers, nullptr);
 
-  EXPECT_FALSE(LIBC_NAMESPACE::stdc_raise(SIGNAL_TO_USE, nullptr, nullptr));
+  EXPECT_FALSE(LIBC_NAMESPACE::sighandle(SIGNAL_TO_USE, nullptr, nullptr));
 
   // Same raise inside a sigguarded() frame guarding a different signal.
   sigset_t guarded{};
@@ -87,7 +88,7 @@ TEST(LlvmLibcWg14Raise, UninstalledRaiseReturnsFalse) {
                                    claiming_decider, value);
   EXPECT_TRUE(guarded_raise_returned_false);
 
-  // Sanity: once installed and claimed, stdc_raise must return true.
+  // Sanity: once installed and claimed, sighandle must return true.
   sigset_t sanity{};
   LIBC_NAMESPACE::sigemptyset(&sanity);
   LIBC_NAMESPACE::sigaddset(&sanity, SIGNAL_TO_USE);
@@ -99,14 +100,16 @@ TEST(LlvmLibcWg14Raise, UninstalledRaiseReturnsFalse) {
   void *decider = LIBC_NAMESPACE::signal_decider_create(
       &guarded2, false, claiming_decider, value);
   ASSERT_NE(decider, nullptr);
-  EXPECT_TRUE(LIBC_NAMESPACE::stdc_raise(SIGNAL_TO_USE, nullptr, nullptr));
+  EXPECT_TRUE(LIBC_NAMESPACE::sighandle(SIGNAL_TO_USE, nullptr, nullptr));
   EXPECT_EQ(LIBC_NAMESPACE::signal_decider_destroy(decider), 0);
   EXPECT_EQ(LIBC_NAMESPACE::siguninstall(handlers2), 0);
   EXPECT_EQ(LIBC_NAMESPACE::siguninstall(handlers), 0);
 }
 
-// stdc_raise(signo, NULL, NULL) must hand the decider deterministic
-// zero/NULL fields (analysis.md 2.14/W2), and a second raise with NULL info
+// sighandle(signo, NULL, NULL) must hand the decider a constructed
+// implementation-defined default (N3924 7.14.2.9 p7/p8): raw_info/raw_context
+// are never NULL and a constructed default siginfo carries
+// si_signo = signo and si_code = SI_USER, and a second raise with NULL info
 // in the same guarded frame must not hand the decider the first raise's
 // stale raw_info.
 static struct observed_info {
@@ -115,6 +118,9 @@ static struct observed_info {
   int error_code;
   void *addr;
   void *raw_info;
+  void *raw_context;
+  int raw_si_signo;
+  int raw_si_code;
 } observed;
 
 static enum sig_decision capture_decider(struct stdc_siginfo *rsi) {
@@ -123,6 +129,11 @@ static enum sig_decision capture_decider(struct stdc_siginfo *rsi) {
   observed.error_code = rsi->error_code;
   observed.addr = rsi->addr;
   observed.raw_info = rsi->raw_info;
+  observed.raw_context = rsi->raw_context;
+  if (rsi->raw_info != nullptr) {
+    observed.raw_si_signo = static_cast<siginfo_t *>(rsi->raw_info)->si_signo;
+    observed.raw_si_code = static_cast<siginfo_t *>(rsi->raw_info)->si_code;
+  }
   return sig_decision_resume_execution;
 }
 
@@ -131,13 +142,13 @@ guarded_two_raises(union stdc_siginfo_value value) {
   siginfo_t fake_info;
   __builtin_memset(&fake_info, 0, sizeof(fake_info));
   fake_info.si_addr = reinterpret_cast<void *>(uintptr_t(0x1234));
-  (void)LIBC_NAMESPACE::stdc_raise(SIGNAL_TO_USE, &fake_info, nullptr);
-  (void)LIBC_NAMESPACE::stdc_raise(SIGNAL_TO_USE, nullptr, nullptr);
+  (void)LIBC_NAMESPACE::sighandle(SIGNAL_TO_USE, &fake_info, nullptr);
+  (void)LIBC_NAMESPACE::sighandle(SIGNAL_TO_USE, nullptr, nullptr);
   return value;
 }
 
-TEST(LlvmLibcWg14Raise, NullInfoGivesZeroedFields) {
-  (void)LIBC_NAMESPACE::stdc_raise(0, nullptr, nullptr);
+TEST(LlvmLibcWg14Raise, NullInfoGivesConstructedDefault) {
+  (void)LIBC_NAMESPACE::sighandle(0, nullptr, nullptr);
 
   void *handlers = LIBC_NAMESPACE::siginstall(nullptr);
   ASSERT_NE(handlers, nullptr);
@@ -152,17 +163,30 @@ TEST(LlvmLibcWg14Raise, NullInfoGivesZeroedFields) {
     void *decider = LIBC_NAMESPACE::signal_decider_create(
         &guarded, false, capture_decider, value);
     ASSERT_NE(decider, nullptr);
-    EXPECT_TRUE(LIBC_NAMESPACE::stdc_raise(SIGNAL_TO_USE, nullptr, nullptr));
+    EXPECT_TRUE(LIBC_NAMESPACE::sighandle(SIGNAL_TO_USE, nullptr, nullptr));
     EXPECT_EQ(observed.decider_calls, 1);
     EXPECT_EQ(observed.signo, SIGNAL_TO_USE);
     EXPECT_EQ(observed.error_code, 0);
     EXPECT_EQ(observed.addr, nullptr);
-    EXPECT_EQ(observed.raw_info, nullptr);
+    EXPECT_NE(observed.raw_info, nullptr);
+    EXPECT_NE(observed.raw_context, nullptr);
+    EXPECT_EQ(observed.raw_si_signo, SIGNAL_TO_USE);
+    EXPECT_EQ(observed.raw_si_code, SI_USER);
+    // The NULL raw_context was replaced by a context captured from the calling
+    // frame, not a zeroed object (7.14.2.9 p8); the object lives in the
+    // per-thread state, so it is still valid here after sighandle() returned.
+    {
+      static const unsigned char zero_context[sizeof(ucontext_t)];
+      EXPECT_NE(__builtin_memcmp(observed.raw_context, zero_context,
+                                 sizeof(ucontext_t)),
+                0);
+    }
     EXPECT_EQ(LIBC_NAMESPACE::signal_decider_destroy(decider), 0);
   }
 
   // Frame path: a second raise with NULL info in the same guarded frame must
-  // not hand the decider the first raise's stale raw_info pointer.
+  // not hand the decider the first raise's stale raw_info pointer; it must
+  // see a freshly constructed default.
   {
     observed = {};
     sigset_t guarded{};
@@ -175,7 +199,10 @@ TEST(LlvmLibcWg14Raise, NullInfoGivesZeroedFields) {
     EXPECT_EQ(observed.signo, SIGNAL_TO_USE);
     EXPECT_EQ(observed.error_code, 0);
     EXPECT_EQ(observed.addr, nullptr);
-    EXPECT_EQ(observed.raw_info, nullptr);
+    EXPECT_NE(observed.raw_info, nullptr);
+    EXPECT_NE(observed.raw_context, nullptr);
+    EXPECT_EQ(observed.raw_si_signo, SIGNAL_TO_USE);
+    EXPECT_EQ(observed.raw_si_code, SI_USER);
   }
 
   EXPECT_EQ(LIBC_NAMESPACE::siguninstall(handlers), 0);
@@ -200,16 +227,16 @@ static union stdc_siginfo_value
 guarded_out_of_range(union stdc_siginfo_value value) {
   // Sanity: a real raise of the guarded signal is claimed by the frame
   // decider.
-  sanity_claimed = LIBC_NAMESPACE::stdc_raise(SIGNAL_TO_USE, nullptr, nullptr);
+  sanity_claimed = LIBC_NAMESPACE::sighandle(SIGNAL_TO_USE, nullptr, nullptr);
   frame_decider_calls = 0;
-  neg_returned_false = !LIBC_NAMESPACE::stdc_raise(-1, nullptr, nullptr);
-  pos_returned_false = !LIBC_NAMESPACE::stdc_raise(NSIG, nullptr, nullptr);
-  far_returned_false = !LIBC_NAMESPACE::stdc_raise(NSIG + 10, nullptr, nullptr);
+  neg_returned_false = !LIBC_NAMESPACE::sighandle(-1, nullptr, nullptr);
+  pos_returned_false = !LIBC_NAMESPACE::sighandle(NSIG, nullptr, nullptr);
+  far_returned_false = !LIBC_NAMESPACE::sighandle(NSIG + 10, nullptr, nullptr);
   return value;
 }
 
 TEST(LlvmLibcWg14Raise, OutOfRangeSignoRejected) {
-  (void)LIBC_NAMESPACE::stdc_raise(0, nullptr, nullptr);
+  (void)LIBC_NAMESPACE::sighandle(0, nullptr, nullptr);
 
   sigset_t guarded{};
   LIBC_NAMESPACE::sigemptyset(&guarded);

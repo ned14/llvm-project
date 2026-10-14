@@ -29,8 +29,10 @@
 #include "src/__support/common.h"
 #include "src/__support/macros/config.h"
 
+#include <stdint.h>
 #include <string.h>
 #include <sys/syscall.h> // SYS_rt_sigaction, SYS_gettid, ...
+#include <ucontext.h>    // ucontext_t, mcontext_t (getcontext shim)
 
 // The kernel's rt_sigaction ABI struct (Linux uapi asm-generic/signal.h):
 // {handler-union, sa_flags, sa_restorer, sa_mask} - "mask last for
@@ -109,6 +111,61 @@ extern "C" int wg14_embedder_kill_self(int signo) {
 
 extern "C" long wg14_embedder_gettid(void) {
   return LIBC_NAMESPACE::syscall_impl<long>(SYS_gettid);
+}
+
+// Thread-directed self-delivery carrying a token in si_value (N3924
+// stdc_raise()'s raw_info/raw_context matching, config.h
+// WG14_SIGNALS_RAISE_WITH_TOKEN). Mirrors the reference POSIX backend's
+// raise_with_token(), which uses syscall(SYS_rt_tgsigqueueinfo) -- libc has
+// no public syscall(), so go through the kernel-facing wrapper.
+extern "C" int wg14_embedder_raise_with_token(int signo, union sigval value) {
+  siginfo_t si;
+  memset(&si, 0, sizeof(si));
+  si.si_signo = signo;
+  si.si_code = SI_QUEUE;
+  si.si_value = value;
+  long pid = LIBC_NAMESPACE::syscall_impl<long>(SYS_getpid);
+  if (pid < 0)
+    return -1;
+  long tid = LIBC_NAMESPACE::syscall_impl<long>(SYS_gettid);
+  if (tid < 0)
+    return -1;
+  long ret = LIBC_NAMESPACE::syscall_impl<long>(SYS_rt_tgsigqueueinfo, pid, tid,
+                                                signo, &si);
+  return ret < 0 ? -1 : 0;
+}
+
+// The reference's default-context construction (N3924 7.14.2.9 p8) uses
+// getcontext(); libc implements getcontext() on x86_64 only, so capture the
+// calling frame here on every target (the embedder_shim.h
+// WG14_SIGNALS_GETCONTEXT macro routes the reference's call to this function).
+// The captured object just has to represent the calling stack frame and be
+// distinguishable from an all-zero object.
+extern "C" int wg14_embedder_getcontext(void *ucp) {
+  ucontext_t *uc = (ucontext_t *)ucp;
+  memset(uc, 0, sizeof(*uc));
+#if defined(__x86_64__)
+  uintptr_t sp;
+  __asm__ volatile("movq %%rsp, %0" : "=r"(sp));
+  uc->uc_mcontext.gregs[REG_RSP] = (greg_t)sp;
+  uc->uc_mcontext.gregs[REG_RBP] =
+      (greg_t)(uintptr_t)__builtin_frame_address(0);
+  uc->uc_mcontext.gregs[REG_RIP] =
+      (greg_t)(uintptr_t)__builtin_return_address(0);
+#elif defined(__aarch64__)
+  unsigned long long sp;
+  __asm__ volatile("mov %0, sp" : "=r"(sp));
+  uc->uc_mcontext.sp = sp;
+  uc->uc_mcontext.regs[29] =
+      (unsigned long long)(uintptr_t)__builtin_frame_address(0);
+  uc->uc_mcontext.regs[30] =
+      (unsigned long long)(uintptr_t)__builtin_return_address(0);
+  uc->uc_mcontext.pc =
+      (unsigned long long)(uintptr_t)__builtin_return_address(0);
+#else
+#error "wg14_embedder_getcontext: unsupported target architecture"
+#endif
+  return 0;
 }
 
 extern "C" void wg14_embedder_abort(void) {

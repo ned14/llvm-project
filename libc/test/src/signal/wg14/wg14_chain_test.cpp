@@ -29,11 +29,11 @@
 #include "src/signal/sigaltstack.h"
 #include "src/signal/sigemptyset.h"
 #include "src/signal/sigguarded.h"
+#include "src/signal/sighandle.h"
 #include "src/signal/siginstall.h"
 #include "src/signal/signal_decider_create.h"
 #include "src/signal/signal_decider_destroy.h"
 #include "src/signal/siguninstall.h"
-#include "src/signal/stdc_raise.h"
 #include "src/stdlib/abort.h"
 #include "test/UnitTest/Test.h"
 
@@ -78,13 +78,13 @@ TEST(LlvmLibcWg14Chain, UserHandlerWrappedClaimedDeclinedRestored) {
                                                     claiming_decider, value);
   ASSERT_NE(dec, nullptr);
   user_handler_calls = 0;
-  EXPECT_TRUE(LIBC_NAMESPACE::stdc_raise(SIGUSR1, nullptr, nullptr));
+  EXPECT_TRUE(LIBC_NAMESPACE::sighandle(SIGUSR1, nullptr, nullptr));
   EXPECT_EQ(user_handler_calls, 0);
   EXPECT_EQ(LIBC_NAMESPACE::signal_decider_destroy(dec), 0);
 
   // With no decider claiming, the raise hands off to the user handler.
   user_handler_calls = 0;
-  EXPECT_TRUE(LIBC_NAMESPACE::stdc_raise(SIGUSR1, nullptr, nullptr));
+  EXPECT_TRUE(LIBC_NAMESPACE::sighandle(SIGUSR1, nullptr, nullptr));
   EXPECT_EQ(user_handler_calls, 1);
 
   // A declining decider also lets the raise reach the user handler.
@@ -92,7 +92,7 @@ TEST(LlvmLibcWg14Chain, UserHandlerWrappedClaimedDeclinedRestored) {
                                               value);
   ASSERT_NE(dec, nullptr);
   user_handler_calls = 0;
-  EXPECT_TRUE(LIBC_NAMESPACE::stdc_raise(SIGUSR1, nullptr, nullptr));
+  EXPECT_TRUE(LIBC_NAMESPACE::sighandle(SIGUSR1, nullptr, nullptr));
   EXPECT_EQ(user_handler_calls, 1);
   EXPECT_EQ(LIBC_NAMESPACE::signal_decider_destroy(dec), 0);
 
@@ -129,7 +129,7 @@ static void sig_handler(int signo, siginfo_t *si, void *ctx) {
 }
 
 TEST(LlvmLibcWg14Chain, SiginfoFidelityThroughHandoff) {
-  (void)LIBC_NAMESPACE::stdc_raise(0, nullptr, nullptr);
+  (void)LIBC_NAMESPACE::sighandle(0, nullptr, nullptr);
 
   struct sigaction sa{};
   sa.sa_sigaction = sig_handler;
@@ -146,7 +146,7 @@ TEST(LlvmLibcWg14Chain, SiginfoFidelityThroughHandoff) {
   sig_calls = 0;
   sig_saw_signo = 0;
   sig_saw_code_user = 0;
-  EXPECT_TRUE(LIBC_NAMESPACE::stdc_raise(SIGUSR2, nullptr, nullptr));
+  EXPECT_TRUE(LIBC_NAMESPACE::sighandle(SIGUSR2, nullptr, nullptr));
   EXPECT_EQ(sig_calls, 1);
   EXPECT_TRUE(sig_saw_signo);
   EXPECT_TRUE(sig_saw_code_user);
@@ -203,7 +203,7 @@ TEST(LlvmLibcWg14Chain, AltstackDeliveryThroughHandoff) {
   EXPECT_EQ(altstack_handler_calls, 1);
 
   // The same SA_ONSTACK handler wrapped by siginstall: an unclaimed
-  // stdc_raise hands off to the saved handler synchronously; the handler
+  // sighandle hands off to the saved handler synchronously; the handler
   // must run (on the current stack -- invoke_sigaction does not re-enter the
   // kernel).
   sigset_t one{};
@@ -212,7 +212,7 @@ TEST(LlvmLibcWg14Chain, AltstackDeliveryThroughHandoff) {
   void *inst = LIBC_NAMESPACE::siginstall(&one);
   ASSERT_NE(inst, nullptr);
   altstack_handler_calls = 0;
-  EXPECT_TRUE(LIBC_NAMESPACE::stdc_raise(SIGUSR1, nullptr, nullptr));
+  EXPECT_TRUE(LIBC_NAMESPACE::sighandle(SIGUSR1, nullptr, nullptr));
   EXPECT_EQ(altstack_handler_calls, 1);
   EXPECT_EQ(LIBC_NAMESPACE::siguninstall(inst), 0);
 
@@ -225,7 +225,7 @@ TEST(LlvmLibcWg14Chain, AltstackDeliveryThroughHandoff) {
 }
 
 // abort() re-entry: with SIGABRT siginstall'ed and a sigguarded frame whose
-// decider asks for recovery, abort() routes through stdc_raise, the frame
+// decider asks for recovery, abort() routes through sighandle, the frame
 // longjmps out and the recovery function runs -- abort() never returns and
 // the process survives.
 static volatile bool recovery_ran = false;

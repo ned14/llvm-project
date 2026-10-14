@@ -1,5 +1,4 @@
-//===--  -------------------------------------------*- C++ -*-===//
-//-*-===//
+//===-- -------------------------------------------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -8,8 +7,8 @@
 //===----------------------------------------------------------------------===//
 ///
 /// \file
-/// Internal header for the WG14 N3924 stdc_raise entrypoint (implemented by the
-/// wg14_signals reference implementation submodule,
+/// Internal header for the WG14 N3924 stdc_raise entrypoint (implemented by
+/// the wg14_signals reference implementation submodule,
 /// libc/src/signal/wg14).
 ///
 //===----------------------------------------------------------------------===//
@@ -27,7 +26,7 @@
 
 namespace LIBC_NAMESPACE_DECL {
 
-bool stdc_raise(int signo, void *raw_info, void *raw_context);
+int stdc_raise(int signo, void *raw_info, void *raw_context);
 
 } // namespace LIBC_NAMESPACE_DECL
 

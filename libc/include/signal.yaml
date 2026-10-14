@@ -193,10 +193,18 @@ functions:
     return_type: void
     arguments:
       - type: struct stdc_siginfo *
-  - name: stdc_raise
+  - name: sighandle
     standards:
       - n3924
     return_type: bool
+    arguments:
+      - type: int
+      - type: void *
+      - type: void *
+  - name: stdc_raise
+    standards:
+      - n3924
+    return_type: int
     arguments:
       - type: int
       - type: void *

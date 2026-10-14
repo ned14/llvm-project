@@ -656,12 +656,12 @@ bool CrashRecoveryContext::RunSafely(function_ref<void()> Fn) {
   // from inside the guarded function therefore has to become a raise that the
   // innermost guard frame's decider recovers from, with the caller's exit
   // code carried on the crash recovery context so the recovery function
-  // records it verbatim. stdc_raise() walks the calling thread's guard frames
+  // records it verbatim. sighandle() walks the calling thread's guard frames
   // directly and does not need the raw handler installed, so this works even
   // if the installations were torn down mid-guard.
   CRCI->PendingExit = true;
   CRCI->PendingExitRetCode = RetCode;
-  stdc_raise(SIGABRT, nullptr, nullptr);
+  sighandle(SIGABRT, nullptr, nullptr);
   // The raise must have unwound the stack through the guard's recovery, so
   // control can only reach here if no guard frame exists (e.g. sigguarded()
   // failed its per-thread setup and RunSafely() fell back to running the

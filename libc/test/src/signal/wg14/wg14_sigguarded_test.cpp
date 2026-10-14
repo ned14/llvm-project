@@ -24,11 +24,11 @@
 #include "src/signal/sigaddset.h"
 #include "src/signal/sigemptyset.h"
 #include "src/signal/sigguarded.h"
+#include "src/signal/sighandle.h"
 #include "src/signal/siginstall.h"
 #include "src/signal/signal_decider_create.h"
 #include "src/signal/signal_decider_destroy.h"
 #include "src/signal/siguninstall.h"
-#include "src/signal/stdc_raise.h"
 #include "src/stdlib/_Exit.h"
 #include "test/UnitTest/Test.h"
 
@@ -128,7 +128,7 @@ TEST(LlvmLibcWg14Sigguarded, FailureValueSentinel) {
   EXPECT_EQ(static_cast<int>(SIGGUARDED_FAILURE_VALUE.int_value), -99);
 }
 
-// Deliberately do NOT call stdc_raise(0, ...) anywhere here: that setup call
+// Deliberately do NOT call sighandle(0, ...) anywhere here: that setup call
 // initialises the per-thread TSS, which this test must leave uninitialised
 // until the sigguarded() under test (analysis.md 2.19/X3).
 static int global_decider_called = 0;
@@ -149,7 +149,7 @@ static union stdc_siginfo_value noop_recovery(const struct stdc_siginfo *rsi) {
 }
 
 static union stdc_siginfo_value guarded_raises(union stdc_siginfo_value value) {
-  (void)LIBC_NAMESPACE::stdc_raise(SIGSEGV, nullptr, nullptr);
+  (void)LIBC_NAMESPACE::sighandle(SIGSEGV, nullptr, nullptr);
   return value;
 }
 

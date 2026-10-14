@@ -101,6 +101,7 @@ set(wg14_entrypoints
   sigguarded
   sigdecider_abandon
   sigdecider_abandon_resume
+  sighandle
   stdc_raise
   siginstall
   siguninstall

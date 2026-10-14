@@ -29,12 +29,12 @@
 #include "src/signal/sigfillset.h"
 #include "src/signal/sigfillset_asynchronous_debug.h"
 #include "src/signal/sigfillset_asynchronous_nondebug.h"
+#include "src/signal/sighandle.h"
 #include "src/signal/siginstall.h"
 #include "src/signal/sigismember.h"
 #include "src/signal/signal_decider_create.h"
 #include "src/signal/siguninstall.h"
 #include "src/signal/siguninstall_system.h"
-#include "src/signal/stdc_raise.h"
 #include "test/UnitTest/Test.h"
 
 namespace {
@@ -155,10 +155,10 @@ TEST(LlvmLibcWg14Install, DefaultActionPreservesInstalledHandler) {
   EXPECT_NE(before.sa_handler, SIG_DFL);
   EXPECT_NE(before.sa_handler, SIG_IGN);
 
-  // No decider claims the raise, so stdc_raise() falls through to the
+  // No decider claims the raise, so sighandle() falls through to the
   // previously installed (SIG_DFL) handler. Taking that default action must
   // not permanently discard the library's installed handler.
-  EXPECT_TRUE(LIBC_NAMESPACE::stdc_raise(SIGCONT, nullptr, nullptr));
+  EXPECT_TRUE(LIBC_NAMESPACE::sighandle(SIGCONT, nullptr, nullptr));
 
   struct sigaction after{};
   ASSERT_EQ(LIBC_NAMESPACE::sigaction(SIGCONT, nullptr, &after), 0);

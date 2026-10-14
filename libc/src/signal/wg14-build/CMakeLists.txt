@@ -73,6 +73,7 @@ add_object_library(
   DEPENDS
     libc.include.signal
     libc.include.sys_syscall
+    libc.include.ucontext
     libc.src.__support.OSUtil.osutil
     libc.src.__support.macros.config
 )

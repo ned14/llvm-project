@@ -27,11 +27,11 @@
 #include "src/signal/sigaddset.h"
 #include "src/signal/sigemptyset.h"
 #include "src/signal/sigguarded.h"
+#include "src/signal/sighandle.h"
 #include "src/signal/siginstall.h"
 #include "src/signal/signal_decider_create.h"
 #include "src/signal/signal_decider_destroy.h"
 #include "src/signal/siguninstall.h"
-#include "src/signal/stdc_raise.h"
 #include "src/threads/thrd_create.h"
 #include "src/threads/thrd_join.h"
 #include "src/unistd/getpid.h"
@@ -71,13 +71,13 @@ static enum sig_decision sigill_decider_func(struct stdc_siginfo *rsi) {
 }
 
 static union stdc_siginfo_value sigill_func(union stdc_siginfo_value value) {
-  (void)LIBC_NAMESPACE::stdc_raise(SIGNAL_TO_USE, nullptr, nullptr);
+  (void)LIBC_NAMESPACE::sighandle(SIGNAL_TO_USE, nullptr, nullptr);
   return value;
 }
 
 static int sigill_thread(void *arg) {
   (void)arg;
-  return LIBC_NAMESPACE::stdc_raise(SIGNAL_TO_USE, nullptr, nullptr);
+  return LIBC_NAMESPACE::sighandle(SIGNAL_TO_USE, nullptr, nullptr);
 }
 
 // Thread-local sigguarded recovery, global decider claim, and concurrent
@@ -114,7 +114,7 @@ TEST(LlvmLibcWg14ThreadHandle, ThreadLocalGlobalAndConcurrentDestroy) {
     void *sigill_decider = LIBC_NAMESPACE::signal_decider_create(
         &guarded, false, sigill_decider_func, value);
     ASSERT_NE(sigill_decider, nullptr);
-    EXPECT_TRUE(LIBC_NAMESPACE::stdc_raise(SIGNAL_TO_USE, nullptr, nullptr));
+    EXPECT_TRUE(LIBC_NAMESPACE::sighandle(SIGNAL_TO_USE, nullptr, nullptr));
     EXPECT_EQ(shared.count_decider, 1);
     EXPECT_EQ(shared.count_recovery, 0);
     EXPECT_EQ(LIBC_NAMESPACE::signal_decider_destroy(sigill_decider), 0);
@@ -153,10 +153,10 @@ TEST(LlvmLibcWg14ThreadHandle, ThreadLocalGlobalAndConcurrentDestroy) {
 }
 
 // Nested delivery during a frame decider must not corrupt the outer rsi
-// (NSTR): each raise gets its own rsi; the outer raise passed NULL info, so
-// after the nested real delivery the outer decider's raw_info must still be
-// NULL, and the nested decider must see the kernel siginfo of its own
-// delivery.
+// (NSTR): each raise gets its own rsi; the outer raise passed NULL info, which
+// the library surfaces as a constructed default (non-NULL), so after the
+// nested real delivery the outer decider's raw_info must be unchanged, and the
+// nested decider must see the kernel siginfo of its own delivery.
 static LIBC_NAMESPACE::cpp::Atomic<int> outer_decider_calls{0};
 static LIBC_NAMESPACE::cpp::Atomic<int> nested_decider_calls{0};
 static volatile int outer_saw_nested_info = 0;
@@ -164,15 +164,17 @@ static volatile bool nested_saw_bad_info = false;
 
 static enum sig_decision nested_rsi_decider(struct stdc_siginfo *rsi) {
   if (outer_decider_calls.fetch_add(1) == 0) {
-    // First (outer) activation: software raise with NULL info.
-    if (rsi->raw_info != nullptr)
+    // First (outer) activation: software raise with NULL info, which must be
+    // surfaced as a constructed default, not NULL.
+    void *const before = rsi->raw_info;
+    if (before == nullptr)
       outer_saw_nested_info = 2;
     // Re-enter the same frame's decider via a real signal delivery.
     // SA_NODEFER leaves the signal unblocked inside the handler, so the
     // nested delivery interrupts this call; the kernel siginfo is what the
     // nested raise's prepare_rsi used to write into a shared frame->rsi.
     (void)LIBC_NAMESPACE::kill(LIBC_NAMESPACE::getpid(), SIGNAL_TO_USE);
-    if (rsi->raw_info != nullptr)
+    if (rsi->raw_info != before)
       outer_saw_nested_info = 1;
     return sig_decision_resume_execution;
   }
@@ -185,7 +187,7 @@ static enum sig_decision nested_rsi_decider(struct stdc_siginfo *rsi) {
 
 static union stdc_siginfo_value
 raise_inside_guard(union stdc_siginfo_value value) {
-  (void)LIBC_NAMESPACE::stdc_raise(SIGNAL_TO_USE, nullptr, nullptr);
+  (void)LIBC_NAMESPACE::sighandle(SIGNAL_TO_USE, nullptr, nullptr);
   return value;
 }
 
@@ -221,7 +223,7 @@ TEST(LlvmLibcWg14ThreadHandle, NestedDeliveryKeepsOwnRsi) {
 
   // After uninstall the frame is popped and the map entry gone: an unclaimed
   // raise returns false instead of re-raising SIGILL at the default action.
-  EXPECT_FALSE(LIBC_NAMESPACE::stdc_raise(SIGNAL_TO_USE, nullptr, nullptr));
+  EXPECT_FALSE(LIBC_NAMESPACE::sighandle(SIGNAL_TO_USE, nullptr, nullptr));
   EXPECT_EQ(outer_decider_calls.load(), 2);
 }
 

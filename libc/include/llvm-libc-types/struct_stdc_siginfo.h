@@ -33,13 +33,13 @@ struct stdc_siginfo {
 
   // The system specific error code for this signal, the si_errno code
   // (POSIX). Zero when the raise carried no OS info (e.g.
-  // stdc_raise(signo, NULL, NULL)).
+  // sighandle(signo, NULL, NULL)).
   int error_code;
   void *addr; // Memory location which caused fault, if appropriate. NULL when
               // the raise carried no OS info.
   union stdc_siginfo_value value; // A user-defined value
 
-  // The OS specific signal info; on POSIX a stdc_raise(signo, NULL, NULL)
+  // The OS specific signal info; on POSIX a sighandle(signo, NULL, NULL)
   // sets raw_info to NULL.
   void *raw_info;
   // The OS specific ucontext_t; on POSIX passed through unchanged and may be

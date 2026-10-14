@@ -1460,6 +1460,7 @@ if(LLVM_LIBC_FULL_BUILD)
     libc.src.signal.sigguarded
     libc.src.signal.sigdecider_abandon
     libc.src.signal.sigdecider_abandon_resume
+    libc.src.signal.sighandle
     libc.src.signal.stdc_raise
     libc.src.signal.siginstall
     libc.src.signal.siguninstall

@@ -9,7 +9,7 @@
 /// \file
 /// Hermetic ports of the wg14_signals reference-implementation tests
 /// nsih_siginfo_handoff_test.c (analysis.md NSIH) and
-/// decider_destroy_return_test.c (SDCF): stdc_raise() handing off to a
+/// decider_destroy_return_test.c (SDCF): sighandle() handing off to a
 /// pre-existing SA_SIGINFO handler must synthesise a minimal non-NULL
 /// siginfo_t, siguninstall() must restore the pre-existing handler exactly,
 /// and signal_decider_destroy() must report success for every removed handle
@@ -27,11 +27,11 @@
 #include "src/signal/sigaction.h"
 #include "src/signal/sigaddset.h"
 #include "src/signal/sigemptyset.h"
+#include "src/signal/sighandle.h"
 #include "src/signal/siginstall.h"
 #include "src/signal/signal_decider_create.h"
 #include "src/signal/signal_decider_destroy.h"
 #include "src/signal/siguninstall.h"
-#include "src/signal/stdc_raise.h"
 #include "test/UnitTest/Test.h"
 
 namespace {
@@ -55,12 +55,12 @@ static void preexisting_siginfo_handler(int signo, siginfo_t *si, void *ctx) {
   }
 }
 
-// stdc_raise(signo, NULL, NULL) handing off to a pre-existing SA_SIGINFO
+// sighandle(signo, NULL, NULL) handing off to a pre-existing SA_SIGINFO
 // handler must pass a synthesised minimal siginfo_t (non-NULL, si_signo and
 // si_code set), never NULL (NSIH); siguninstall() must restore the
 // pre-existing handler exactly.
 TEST(LlvmLibcWg14Handoff, SiginfoHandoffToPreexistingHandler) {
-  (void)LIBC_NAMESPACE::stdc_raise(0, nullptr, nullptr);
+  (void)LIBC_NAMESPACE::sighandle(0, nullptr, nullptr);
 
   struct sigaction sa{};
   sa.sa_sigaction = preexisting_siginfo_handler;
@@ -78,7 +78,7 @@ TEST(LlvmLibcWg14Handoff, SiginfoHandoffToPreexistingHandler) {
   saw_valid_si = 0;
   saw_signo = 0;
   saw_si_code_user = 0;
-  EXPECT_TRUE(LIBC_NAMESPACE::stdc_raise(SIGNAL_TO_USE, nullptr, nullptr));
+  EXPECT_TRUE(LIBC_NAMESPACE::sighandle(SIGNAL_TO_USE, nullptr, nullptr));
   EXPECT_EQ(handler_calls, 1);
   EXPECT_NE(saw_valid_si, 0);
   EXPECT_NE(saw_signo, 0);
