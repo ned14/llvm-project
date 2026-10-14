@@ -103,7 +103,7 @@ static union stdc_siginfo_value call_inner(union stdc_siginfo_value value) {
 // A genuine SIGSEGV in the innermost frame with no recovery must fall through
 // to the outer frame's recovery instead of looping (analysis.md 1.7).
 TEST(LlvmLibcWg14Sigguarded, NullRecoveryFallsThrough) {
-  void *handlers = LIBC_NAMESPACE::siginstall(nullptr);
+  sig_handlers_t handlers = LIBC_NAMESPACE::siginstall(nullptr);
   ASSERT_NE(handlers, nullptr);
 
   struct shared_t shared{};
@@ -160,10 +160,10 @@ TEST(LlvmLibcWg14Sigguarded, TssInitBeforeGlobalClaim) {
   sigset_t guarded{};
   LIBC_NAMESPACE::sigemptyset(&guarded);
   LIBC_NAMESPACE::sigaddset(&guarded, SIGSEGV);
-  void *handlers = LIBC_NAMESPACE::siginstall(&guarded);
+  sig_handlers_t handlers = LIBC_NAMESPACE::siginstall(&guarded);
   ASSERT_NE(handlers, nullptr);
   union stdc_siginfo_value value{7};
-  void *decider = LIBC_NAMESPACE::signal_decider_create(
+  signal_decider_t decider = LIBC_NAMESPACE::signal_decider_create(
       &guarded, false, claiming_decider, value);
   ASSERT_NE(decider, nullptr);
 

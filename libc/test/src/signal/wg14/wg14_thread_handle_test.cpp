@@ -83,7 +83,7 @@ static int sigill_thread(void *arg) {
 // Thread-local sigguarded recovery, global decider claim, and concurrent
 // destroy of a global decider whilst a raise is in flight.
 TEST(LlvmLibcWg14ThreadHandle, ThreadLocalGlobalAndConcurrentDestroy) {
-  void *handlers = LIBC_NAMESPACE::siginstall(nullptr);
+  sig_handlers_t handlers = LIBC_NAMESPACE::siginstall(nullptr);
   ASSERT_NE(handlers, nullptr);
 
   // Thread-local handling: a frame decider claiming call_recovery runs the
@@ -111,7 +111,7 @@ TEST(LlvmLibcWg14ThreadHandle, ThreadLocalGlobalAndConcurrentDestroy) {
     sigset_t guarded{};
     LIBC_NAMESPACE::sigemptyset(&guarded);
     LIBC_NAMESPACE::sigaddset(&guarded, SIGNAL_TO_USE);
-    void *sigill_decider = LIBC_NAMESPACE::signal_decider_create(
+    signal_decider_t sigill_decider = LIBC_NAMESPACE::signal_decider_create(
         &guarded, false, sigill_decider_func, value);
     ASSERT_NE(sigill_decider, nullptr);
     EXPECT_TRUE(LIBC_NAMESPACE::sighandle(SIGNAL_TO_USE, nullptr, nullptr));
@@ -131,7 +131,7 @@ TEST(LlvmLibcWg14ThreadHandle, ThreadLocalGlobalAndConcurrentDestroy) {
     sigset_t guarded{};
     LIBC_NAMESPACE::sigemptyset(&guarded);
     LIBC_NAMESPACE::sigaddset(&guarded, SIGNAL_TO_USE);
-    void *sigill_decider = LIBC_NAMESPACE::signal_decider_create(
+    signal_decider_t sigill_decider = LIBC_NAMESPACE::signal_decider_create(
         &guarded, false, sigill_decider_func, value);
     ASSERT_NE(sigill_decider, nullptr);
 
@@ -199,7 +199,7 @@ TEST(LlvmLibcWg14ThreadHandle, NestedDeliveryKeepsOwnRsi) {
   sigset_t guarded{};
   LIBC_NAMESPACE::sigemptyset(&guarded);
   LIBC_NAMESPACE::sigaddset(&guarded, SIGNAL_TO_USE);
-  void *handlers = LIBC_NAMESPACE::siginstall(&guarded);
+  sig_handlers_t handlers = LIBC_NAMESPACE::siginstall(&guarded);
   ASSERT_NE(handlers, nullptr);
 
   outer_decider_calls.store(0);

@@ -50,6 +50,12 @@ types:
   - type_name: sig_func_t
     standards:
       - n3924
+  - type_name: sig_handlers_t
+    standards:
+      - n3924
+  - type_name: signal_decider_t
+    standards:
+      - n3924
   - type_name: sig_recover_t
     standards:
       - n3924
@@ -212,7 +218,7 @@ functions:
   - name: siginstall
     standards:
       - n3924
-    return_type: void *
+    return_type: sig_handlers_t
     arguments:
       - type: const sigset_t *
   - name: siguninstall
@@ -220,7 +226,7 @@ functions:
       - n3924
     return_type: int
     arguments:
-      - type: void *
+      - type: sig_handlers_t
   - name: siguninstall_system
     standards:
       - n3924
@@ -230,7 +236,7 @@ functions:
   - name: signal_decider_create
     standards:
       - n3924
-    return_type: void *
+    return_type: signal_decider_t
     arguments:
       - type: const sigset_t *
       - type: bool
@@ -241,4 +247,4 @@ functions:
       - n3924
     return_type: int
     arguments:
-      - type: void *
+      - type: signal_decider_t

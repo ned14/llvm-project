@@ -19,18 +19,15 @@
 #include "src/__support/common.h"
 #include "src/__support/macros/config.h"
 
-extern "C"
-{
+extern "C" {
 
-  int wg14_signals_signal_decider_destroy(void *decider);
+int wg14_signals_signal_decider_destroy(signal_decider_t decider);
 }
 
-namespace LIBC_NAMESPACE_DECL
-{
+namespace LIBC_NAMESPACE_DECL {
 
-  LLVM_LIBC_FUNCTION(int, signal_decider_destroy, (void *decider))
-  {
-    return wg14_signals_signal_decider_destroy(decider);
-  }
+LLVM_LIBC_FUNCTION(int, signal_decider_destroy, (signal_decider_t decider)) {
+  return wg14_signals_signal_decider_destroy(decider);
+}
 
-}  // namespace LIBC_NAMESPACE_DECL
+} // namespace LIBC_NAMESPACE_DECL

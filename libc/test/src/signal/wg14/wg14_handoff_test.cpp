@@ -71,7 +71,7 @@ TEST(LlvmLibcWg14Handoff, SiginfoHandoffToPreexistingHandler) {
   sigset_t guarded{};
   LIBC_NAMESPACE::sigemptyset(&guarded);
   LIBC_NAMESPACE::sigaddset(&guarded, SIGNAL_TO_USE);
-  void *handlers = LIBC_NAMESPACE::siginstall(&guarded);
+  sig_handlers_t handlers = LIBC_NAMESPACE::siginstall(&guarded);
   ASSERT_NE(handlers, nullptr);
 
   handler_calls = 0;
@@ -109,8 +109,8 @@ TEST(LlvmLibcWg14Handoff, DeciderDestroyReturnContract) {
     sigset_t g{};
     LIBC_NAMESPACE::sigemptyset(&g);
     LIBC_NAMESPACE::sigaddset(&g, SIGABRT);
-    void *d = LIBC_NAMESPACE::signal_decider_create(&g, false, claiming_decider,
-                                                    value);
+    signal_decider_t d = LIBC_NAMESPACE::signal_decider_create(
+        &g, false, claiming_decider, value);
     ASSERT_NE(d, nullptr);
     LIBC_NAMESPACE::libc_errno = 0;
     EXPECT_EQ(LIBC_NAMESPACE::signal_decider_destroy(d), 0);
@@ -125,14 +125,14 @@ TEST(LlvmLibcWg14Handoff, DeciderDestroyReturnContract) {
     sigset_t install{};
     LIBC_NAMESPACE::sigemptyset(&install);
     LIBC_NAMESPACE::sigaddset(&install, SIGABRT);
-    void *h = LIBC_NAMESPACE::siginstall(&install);
+    sig_handlers_t h = LIBC_NAMESPACE::siginstall(&install);
     ASSERT_NE(h, nullptr);
     sigset_t g{};
     LIBC_NAMESPACE::sigemptyset(&g);
     LIBC_NAMESPACE::sigaddset(&g, SIGABRT);
     LIBC_NAMESPACE::sigaddset(&g, SIGTERM);
-    void *d = LIBC_NAMESPACE::signal_decider_create(&g, false, claiming_decider,
-                                                    value);
+    signal_decider_t d = LIBC_NAMESPACE::signal_decider_create(
+        &g, false, claiming_decider, value);
     ASSERT_NE(d, nullptr);
     EXPECT_EQ(LIBC_NAMESPACE::signal_decider_destroy(d), 0);
     EXPECT_EQ(LIBC_NAMESPACE::siguninstall(h), 0);

@@ -744,3 +744,5 @@ add_header(struct_stdc_siginfo HDR struct_stdc_siginfo.h DEPENDS .union_stdc_sig
 add_header(sig_func_t HDR sig_func_t.h DEPENDS .union_stdc_siginfo_value)
 add_header(sig_recover_t HDR sig_recover_t.h DEPENDS .struct_stdc_siginfo)
 add_header(sig_decide_t HDR sig_decide_t.h DEPENDS .sig_decision .struct_stdc_siginfo)
+add_header(sig_handlers_t HDR sig_handlers_t.h)
+add_header(signal_decider_t HDR signal_decider_t.h)

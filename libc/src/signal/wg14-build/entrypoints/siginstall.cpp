@@ -19,18 +19,15 @@
 #include "src/__support/common.h"
 #include "src/__support/macros/config.h"
 
-extern "C"
-{
+extern "C" {
 
-  void *wg14_signals_siginstall(const sigset_t *guarded);
+sig_handlers_t wg14_signals_siginstall(const sigset_t *guarded);
 }
 
-namespace LIBC_NAMESPACE_DECL
-{
+namespace LIBC_NAMESPACE_DECL {
 
-  LLVM_LIBC_FUNCTION(void *, siginstall, (const sigset_t *guarded))
-  {
-    return wg14_signals_siginstall(guarded);
-  }
+LLVM_LIBC_FUNCTION(sig_handlers_t, siginstall, (const sigset_t *guarded)) {
+  return wg14_signals_siginstall(guarded);
+}
 
-}  // namespace LIBC_NAMESPACE_DECL
+} // namespace LIBC_NAMESPACE_DECL

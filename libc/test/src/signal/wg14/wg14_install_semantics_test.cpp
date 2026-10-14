@@ -43,7 +43,7 @@ namespace {
 // excluding libc-internal signals (SIGCANCEL/SIGSETXID) and the realtime
 // range; the same filtering applies to explicit guarded inputs (RTIM).
 TEST(LlvmLibcWg14Install, NullSetCoversStandardExcludesInternal) {
-  void *set = LIBC_NAMESPACE::siginstall(nullptr);
+  sig_handlers_t set = LIBC_NAMESPACE::siginstall(nullptr);
   ASSERT_NE(set, nullptr);
 
   EXPECT_EQ(LIBC_NAMESPACE::sigismember((const sigset_t *)set, SIGILL), 1);
@@ -68,7 +68,7 @@ TEST(LlvmLibcWg14Install, NullSetCoversStandardExcludesInternal) {
   // Explicit guarded input is filtered for the libc-internal signals too.
   sigset_t guarded{};
   LIBC_NAMESPACE::sigfillset(&guarded);
-  void *explicit_handle = LIBC_NAMESPACE::siginstall(&guarded);
+  sig_handlers_t explicit_handle = LIBC_NAMESPACE::siginstall(&guarded);
   ASSERT_NE(explicit_handle, nullptr);
 #ifdef SIGCANCEL
   EXPECT_NE(
@@ -146,7 +146,7 @@ TEST(LlvmLibcWg14Install, DefaultActionPreservesInstalledHandler) {
   sigset_t guarded{};
   LIBC_NAMESPACE::sigemptyset(&guarded);
   LIBC_NAMESPACE::sigaddset(&guarded, SIGCONT);
-  void *handlers = LIBC_NAMESPACE::siginstall(&guarded);
+  sig_handlers_t handlers = LIBC_NAMESPACE::siginstall(&guarded);
   ASSERT_NE(handlers, nullptr);
 
   struct sigaction before{};

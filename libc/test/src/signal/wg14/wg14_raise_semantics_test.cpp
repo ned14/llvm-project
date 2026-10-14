@@ -74,7 +74,7 @@ TEST(LlvmLibcWg14Raise, UninstalledRaiseReturnsFalse) {
   sigset_t base{};
   LIBC_NAMESPACE::sigemptyset(&base);
   LIBC_NAMESPACE::sigaddset(&base, OTHER_SIGNAL);
-  void *handlers = LIBC_NAMESPACE::siginstall(&base);
+  sig_handlers_t handlers = LIBC_NAMESPACE::siginstall(&base);
   ASSERT_NE(handlers, nullptr);
 
   EXPECT_FALSE(LIBC_NAMESPACE::sighandle(SIGNAL_TO_USE, nullptr, nullptr));
@@ -92,12 +92,12 @@ TEST(LlvmLibcWg14Raise, UninstalledRaiseReturnsFalse) {
   sigset_t sanity{};
   LIBC_NAMESPACE::sigemptyset(&sanity);
   LIBC_NAMESPACE::sigaddset(&sanity, SIGNAL_TO_USE);
-  void *handlers2 = LIBC_NAMESPACE::siginstall(&sanity);
+  sig_handlers_t handlers2 = LIBC_NAMESPACE::siginstall(&sanity);
   ASSERT_NE(handlers2, nullptr);
   sigset_t guarded2{};
   LIBC_NAMESPACE::sigemptyset(&guarded2);
   LIBC_NAMESPACE::sigaddset(&guarded2, SIGNAL_TO_USE);
-  void *decider = LIBC_NAMESPACE::signal_decider_create(
+  signal_decider_t decider = LIBC_NAMESPACE::signal_decider_create(
       &guarded2, false, claiming_decider, value);
   ASSERT_NE(decider, nullptr);
   EXPECT_TRUE(LIBC_NAMESPACE::sighandle(SIGNAL_TO_USE, nullptr, nullptr));
@@ -150,7 +150,7 @@ guarded_two_raises(union stdc_siginfo_value value) {
 TEST(LlvmLibcWg14Raise, NullInfoGivesConstructedDefault) {
   (void)LIBC_NAMESPACE::sighandle(0, nullptr, nullptr);
 
-  void *handlers = LIBC_NAMESPACE::siginstall(nullptr);
+  sig_handlers_t handlers = LIBC_NAMESPACE::siginstall(nullptr);
   ASSERT_NE(handlers, nullptr);
 
   // Global decider path.
@@ -160,7 +160,7 @@ TEST(LlvmLibcWg14Raise, NullInfoGivesConstructedDefault) {
     LIBC_NAMESPACE::sigemptyset(&guarded);
     LIBC_NAMESPACE::sigaddset(&guarded, SIGNAL_TO_USE);
     union stdc_siginfo_value value{7};
-    void *decider = LIBC_NAMESPACE::signal_decider_create(
+    signal_decider_t decider = LIBC_NAMESPACE::signal_decider_create(
         &guarded, false, capture_decider, value);
     ASSERT_NE(decider, nullptr);
     EXPECT_TRUE(LIBC_NAMESPACE::sighandle(SIGNAL_TO_USE, nullptr, nullptr));
@@ -241,7 +241,7 @@ TEST(LlvmLibcWg14Raise, OutOfRangeSignoRejected) {
   sigset_t guarded{};
   LIBC_NAMESPACE::sigemptyset(&guarded);
   LIBC_NAMESPACE::sigaddset(&guarded, SIGNAL_TO_USE);
-  void *handlers = LIBC_NAMESPACE::siginstall(&guarded);
+  sig_handlers_t handlers = LIBC_NAMESPACE::siginstall(&guarded);
   ASSERT_NE(handlers, nullptr);
   union stdc_siginfo_value value{7};
   (void)LIBC_NAMESPACE::sigguarded(&guarded, guarded_out_of_range,

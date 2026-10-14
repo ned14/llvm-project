@@ -84,15 +84,15 @@ TEST(LlvmLibcWg14StdcRaise, RaisesUninstalledSignal) {
 // p5/p6/p7).
 TEST(LlvmLibcWg14StdcRaise, CallerInfoAndConstructedDefault) {
   (void)LIBC_NAMESPACE::sighandle(0, nullptr, nullptr);
-  void *handlers = LIBC_NAMESPACE::siginstall(nullptr);
+  sig_handlers_t handlers = LIBC_NAMESPACE::siginstall(nullptr);
   ASSERT_NE(handlers, nullptr);
 
   union stdc_siginfo_value value{7};
   sigset_t guarded{};
   LIBC_NAMESPACE::sigemptyset(&guarded);
   LIBC_NAMESPACE::sigaddset(&guarded, SIGNAL_TO_USE);
-  void *decider = LIBC_NAMESPACE::signal_decider_create(&guarded, false,
-                                                        capture_decider, value);
+  signal_decider_t decider = LIBC_NAMESPACE::signal_decider_create(
+      &guarded, false, capture_decider, value);
   ASSERT_NE(decider, nullptr);
 
   // Caller-supplied raw_info/raw_context are surfaced unchanged.

@@ -1389,6 +1389,22 @@ add_proxy_header_library(
 )
 
 add_proxy_header_library(
+  sig_handlers_t
+  HDRS
+    sig_handlers_t.h
+  FULL_BUILD_DEPENDS
+    libc.include.llvm-libc-types.sig_handlers_t
+)
+
+add_proxy_header_library(
+  signal_decider_t
+  HDRS
+    signal_decider_t.h
+  FULL_BUILD_DEPENDS
+    libc.include.llvm-libc-types.signal_decider_t
+)
+
+add_proxy_header_library(
   thread_id_t
   HDRS
     thread_id_t.h

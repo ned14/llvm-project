@@ -19,23 +19,20 @@
 #include "src/__support/common.h"
 #include "src/__support/macros/config.h"
 
-extern "C"
-{
+extern "C" {
 
-  void *wg14_signals_signal_decider_create(const sigset_t *guarded,
-                                           bool callfirst, sig_decide_t decider,
-                                           union stdc_siginfo_value value);
+signal_decider_t
+wg14_signals_signal_decider_create(const sigset_t *guarded, bool callfirst,
+                                   sig_decide_t decider,
+                                   union stdc_siginfo_value value);
 }
 
-namespace LIBC_NAMESPACE_DECL
-{
+namespace LIBC_NAMESPACE_DECL {
 
-  LLVM_LIBC_FUNCTION(void *, signal_decider_create,
-                     (const sigset_t *guarded, bool callfirst,
-                      sig_decide_t decider, union stdc_siginfo_value value))
-  {
-    return wg14_signals_signal_decider_create(guarded, callfirst, decider,
-                                              value);
-  }
+LLVM_LIBC_FUNCTION(signal_decider_t, signal_decider_create,
+                   (const sigset_t *guarded, bool callfirst,
+                    sig_decide_t decider, union stdc_siginfo_value value)) {
+  return wg14_signals_signal_decider_create(guarded, callfirst, decider, value);
+}
 
-}  // namespace LIBC_NAMESPACE_DECL
+} // namespace LIBC_NAMESPACE_DECL

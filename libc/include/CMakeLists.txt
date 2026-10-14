@@ -422,6 +422,8 @@ add_header_macro(
     .llvm-libc-types.sig_decide_t
     .llvm-libc-types.sig_decision
     .llvm-libc-types.sig_func_t
+    .llvm-libc-types.sig_handlers_t
+    .llvm-libc-types.signal_decider_t
     .llvm-libc-types.sig_recover_t
     .llvm-libc-types.sig_t
     .llvm-libc-types.sighandler_t

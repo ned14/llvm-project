@@ -20,6 +20,7 @@
 #include "hdr/types/sig_decide_t.h"
 #include "hdr/types/sig_func_t.h"
 #include "hdr/types/sig_recover_t.h"
+#include "hdr/types/signal_decider_t.h"
 #include "hdr/types/sigset_t.h"
 #include "hdr/types/struct_stdc_siginfo.h"
 #include "hdr/types/union_stdc_siginfo_value.h"
@@ -27,9 +28,9 @@
 
 namespace LIBC_NAMESPACE_DECL {
 
-void *signal_decider_create(const sigset_t *guarded, bool callfirst,
-                            sig_decide_t decider,
-                            union stdc_siginfo_value value);
+signal_decider_t signal_decider_create(const sigset_t *guarded, bool callfirst,
+                                       sig_decide_t decider,
+                                       union stdc_siginfo_value value);
 
 } // namespace LIBC_NAMESPACE_DECL
 

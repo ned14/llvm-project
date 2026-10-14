@@ -19,6 +19,7 @@
 
 #include "hdr/types/sig_decide_t.h"
 #include "hdr/types/sig_func_t.h"
+#include "hdr/types/sig_handlers_t.h"
 #include "hdr/types/sig_recover_t.h"
 #include "hdr/types/sigset_t.h"
 #include "hdr/types/struct_stdc_siginfo.h"
@@ -27,7 +28,7 @@
 
 namespace LIBC_NAMESPACE_DECL {
 
-void *siginstall(const sigset_t *guarded);
+sig_handlers_t siginstall(const sigset_t *guarded);
 
 } // namespace LIBC_NAMESPACE_DECL
 

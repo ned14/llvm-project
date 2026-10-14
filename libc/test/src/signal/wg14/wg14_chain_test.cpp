@@ -69,13 +69,13 @@ TEST(LlvmLibcWg14Chain, UserHandlerWrappedClaimedDeclinedRestored) {
   sigset_t one{};
   LIBC_NAMESPACE::sigemptyset(&one);
   LIBC_NAMESPACE::sigaddset(&one, SIGUSR1);
-  void *inst = LIBC_NAMESPACE::siginstall(&one);
+  sig_handlers_t inst = LIBC_NAMESPACE::siginstall(&one);
   ASSERT_NE(inst, nullptr);
 
   // A decider claims the raise: the user handler must not run.
   union stdc_siginfo_value value{};
-  void *dec = LIBC_NAMESPACE::signal_decider_create(&one, false,
-                                                    claiming_decider, value);
+  signal_decider_t dec = LIBC_NAMESPACE::signal_decider_create(
+      &one, false, claiming_decider, value);
   ASSERT_NE(dec, nullptr);
   user_handler_calls = 0;
   EXPECT_TRUE(LIBC_NAMESPACE::sighandle(SIGUSR1, nullptr, nullptr));
@@ -140,7 +140,7 @@ TEST(LlvmLibcWg14Chain, SiginfoFidelityThroughHandoff) {
   sigset_t one{};
   LIBC_NAMESPACE::sigemptyset(&one);
   LIBC_NAMESPACE::sigaddset(&one, SIGUSR2);
-  void *inst = LIBC_NAMESPACE::siginstall(&one);
+  sig_handlers_t inst = LIBC_NAMESPACE::siginstall(&one);
   ASSERT_NE(inst, nullptr);
 
   sig_calls = 0;
@@ -209,7 +209,7 @@ TEST(LlvmLibcWg14Chain, AltstackDeliveryThroughHandoff) {
   sigset_t one{};
   LIBC_NAMESPACE::sigemptyset(&one);
   LIBC_NAMESPACE::sigaddset(&one, SIGUSR1);
-  void *inst = LIBC_NAMESPACE::siginstall(&one);
+  sig_handlers_t inst = LIBC_NAMESPACE::siginstall(&one);
   ASSERT_NE(inst, nullptr);
   altstack_handler_calls = 0;
   EXPECT_TRUE(LIBC_NAMESPACE::sighandle(SIGUSR1, nullptr, nullptr));
@@ -251,7 +251,7 @@ TEST(LlvmLibcWg14Chain, AbortReentryRecovers) {
   sigset_t abrt{};
   LIBC_NAMESPACE::sigemptyset(&abrt);
   LIBC_NAMESPACE::sigaddset(&abrt, SIGABRT);
-  void *abrt_inst = LIBC_NAMESPACE::siginstall(&abrt);
+  sig_handlers_t abrt_inst = LIBC_NAMESPACE::siginstall(&abrt);
   ASSERT_NE(abrt_inst, nullptr);
 
   recovery_ran = 0;
